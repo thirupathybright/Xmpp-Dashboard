@@ -1,0 +1,19 @@
+{
+  "phoneNumber": "51488135106812@lid",
+  "messageCount": 2,
+  "lastUpdated": "2026-01-30T09:49:03.826Z",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hi",
+      "timestamp": 1769766543826,
+      "createdAt": "2026-01-30T09:49:03.826Z"
+    },
+    {
+      "role": "assistant",
+      "content": "Hello! Welcome to Thirupathybright Industries.\n\nI'm your AI assistant with direct access to our order management system. I can help you with:\n\n📦 Order Status & Details\n- Check order status by order number (e.g., \"ORD-2506-0738\")\n- View material status and expected delivery dates\n- Track dispatch progress and remaining quantities\n\n👥 Customer Information\n- View all orders for a customer (e.g., \"Show SSPL orders\")\n- Filter by pending, in-progress, or completed status\n- See customer order history\n\n🚚 Dispatch Tracking\n- Get dispatch details by number (e.g., \"DSP-2506-0347\")\n- Check dispatch weights and completion dates\n- View which customer received a dispatch\n\n📊 Order Queries\n- List all pending orders\n- Show completed orders\n- Check orders by status, customer, or date\n\nJust ask me anything about your orders, and I'll fetch the real-time information from our database!\n\nHow can I help you today?",
+      "timestamp": 1769766543826,
+      "createdAt": "2026-01-30T09:49:03.826Z"
+    }
+  ]
+}

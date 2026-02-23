@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Code Examples - WhatsApp Integration</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet" />
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/atom-one-dark.min.css" rel="stylesheet" />
+  <style>
+    :root {
+      --primary-color: #128C7E;
+      --secondary-color: #25D366;
+      --dark-color: #075E54;
+      --light-color: #DCF8C6;
+      --gray-color: #f0f2f5;
+    }
+    
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #f5f5f5;
+    }
+    
+    .navbar {
+      background-color: var(--primary-color) !important;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+    
+    .navbar-brand {
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+    }
+    
+    .navbar-brand i {
+      margin-right: 8px;
+      font-size: 1.4rem;
+    }
+    
+    .nav-link {
+      font-weight: 500;
+    }
+    
+    .nav-link.active {
+      background-color: rgba(255, 255, 255, 0.2);
+      border-radius: 5px;
+    }
+    
+    .user-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background-color: #e0e0e0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-right: 8px;
+      font-weight: bold;
+      color: var(--dark-color);
+    }
+    
+    .content-container {
+      background-color: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+      padding: 24px;
+      margin-top: 24px;
+      margin-bottom: 24px;
+    }
+    
+    .page-header {
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--gray-color);
+    }
+    
+    .page-header h3 {
+      color: var(--dark-color);
+      margin: 0;
+      font-weight: 600;
+    }
+    
+    /* Tab styling */
+    .nav-tabs {
+      border-bottom: 2px solid var(--gray-color);
+      margin-bottom: 20px;
+    }
+    
+    .nav-tabs .nav-link {
+      border: none;
+      color: #555;
+      padding: 10px 16px;
+      margin-right: 4px;
+      font-weight: 500;
+      position: relative;
+    }
+    
+    .nav-tabs .nav-link.active {
+      color: var(--primary-color);
+      background-color: transparent;
+      border: none;
+    }
+    
+    .nav-tabs .nav-link.active::after {
+      content: '';
+      position: absolute;
+      bottom: -2px;
+      left: 0;
+      width: 100%;
+      height: 3px;
+      background-color: var(--primary-color);
+      border-radius: 3px 3px 0 0;
+    }
+    
+    .nav-tabs .nav-link:hover:not(.active) {
+      background-color: var(--gray-color);
+      border: none;
+    }
+    
+    /* Code blocks styling */
+    .tab-pane {
+      background-color: #282c34;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    
+    pre {
+      margin: 0;
+      padding: 16px;
+    }
+    
+    code {
+      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+      color: #abb2bf;
+    }
+    
+    .language-python {
+      color: #98c379;
+    }
+    
+    .language-php {
+      color: #61afef;
+    }
+    
+    .language-java {
+      color: #e06c75;
+    }
+    
+    .language-javascript {
+      color: #e5c07b;
+    }
+    
+    .code-header {
+      background-color: var(--dark-color);
+      color: white;
+      padding: 12px 20px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+    }
+    
+    .code-header i {
+      margin-right: 10px;
+    }
+    
+    .code-block {
+      margin-bottom: 20px;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+    }
+    
+    .tip-box {
+      background-color: var(--light-color);
+      border-left: 4px solid var(--secondary-color);
+      padding: 12px 16px;
+      margin-top: 20px;
+      border-radius: 4px;
+    }
+    
+    .tip-box i {
+      color: var(--primary-color);
+      margin-right: 8px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Navbar -->
+  <nav class="navbar navbar-expand-lg navbar-dark">
+    <div class="container">
+      <a class="navbar-brand" href="dashboard.html">
+        <i class="fab fa-whatsapp"></i> WhatsApp Dashboard
+      </a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarContent">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarContent">
+        <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+          <li class="nav-item">
+            <a class="nav-link px-3" href="dashboard.html">
+              <i class="fas fa-tachometer-alt me-1"></i> Dashboard
+            </a>
+          </li>
+      <li class="nav-item">
+  <a class="nav-link px-3" href="ai.html">
+    <i class="fas fa-robot me-1"></i> AI Settings
+  </a>
+</li>
+
+          <li class="nav-item">
+            <a class="nav-link active px-3" href="integration.html">
+              <i class="fas fa-code me-1"></i> Integration
+            </a>
+          </li>
+        </ul>
+        <div class="d-flex align-items-center">
+          <div id="userInfoContainer" class="d-flex align-items-center text-white me-3">
+            <div class="user-avatar" id="userAvatar"></div>
+            <span id="userInfo"></span>
+          </div>
+          <button onclick="logout()" class="btn btn-outline-light">
+            <i class="fas fa-sign-out-alt me-1"></i> Logout
+          </button>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <div class="container">
+    <div class="content-container">
+      <div class="page-header">
+        <h3><i class="fas fa-code me-2"></i>WhatsApp Integration Examples</h3>
+      </div>
+
+      <!-- Tabs navigation -->
+      <ul class="nav nav-tabs" id="codeTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button class="nav-link active" id="python-tab" data-bs-toggle="tab" data-bs-target="#python" type="button" role="tab">
+            <i class="fab fa-python me-2"></i>Python
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="php-tab" data-bs-toggle="tab" data-bs-target="#php" type="button" role="tab">
+            <i class="fab fa-php me-2"></i>PHP
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="java-tab" data-bs-toggle="tab" data-bs-target="#java" type="button" role="tab">
+            <i class="fab fa-java me-2"></i>Java
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="appscript-tab" data-bs-toggle="tab" data-bs-target="#appscript" type="button" role="tab">
+            <i class="fas fa-table me-2"></i>Google Sheets
+          </button>
+        </li>
+      </ul>
+
+      <!-- Tabs content -->
+      <div class="tab-content" id="codeTabsContent">
+        <!-- Python tab -->
+        <div class="tab-pane fade show active" id="python" role="tabpanel" aria-labelledby="python-tab">
+          <div class="code-block">
+            <div class="code-header">
+              <i class="fab fa-python"></i> Python Example
+            </div>
+            <pre><code class="language-python">import requests
+
+email = "n@gmail.com"
+password = "12345"
+
+login_url = "http://xyz.com/auth/login"
+login_payload = {"email": email, "password": password}
+
+try:
+    login_response = requests.post(login_url, json=login_payload)
+    login_response.raise_for_status()
+    token = login_response.json()['token']
+except requests.exceptions.RequestException as e:
+    print("Login failed:", e)
+    exit()
+
+send_url = "http://xyz.com/send-message"
+headers = {"Authorization": f"Bearer {token}"}
+send_payload = {
+    "phone": "917550300724@c.us",
+    "message": "Hello from Python!"
+}
+
+response = requests.post(send_url, json=send_payload, headers=headers)
+print(response.json())</code></pre>
+          </div>
+        </div>
+
+        <!-- PHP tab -->
+        <div class="tab-pane fade" id="php" role="tabpanel" aria-labelledby="php-tab">
+          <div class="code-block">
+            <div class="code-header">
+              <i class="fab fa-php"></i> PHP Example
+            </div>
+            <pre><code class="language-php">$loginPayload = json_encode([
+    "email" => "n@gmail.com",
+    "password" => "12345"
+]);
+
+$loginOpts = ["http" => [
+    "method" => "POST",
+    "header" => "Content-Type: application/json",
+    "content" => $loginPayload
+]];
+$loginContext = stream_context_create($loginOpts);
+$loginResult = file_get_contents("http://xyz.com/auth/login", false, $loginContext);
+$token = json_decode($loginResult)->token;
+
+$headers = ["http" => [
+    "method" => "POST",
+    "header" => "Content-Type: application/json\r\nAuthorization: Bearer $token",
+    "content" => json_encode([
+        "phone" => "917550300724@c.us",
+        "message" => "Hello from PHP!"
+    ])
+]];
+$context = stream_context_create($headers);
+$response = file_get_contents("http://xyz.com/send-message", false, $context);
+echo $response;</code></pre>
+          </div>
+        </div>
+
+        <!-- Java tab -->
+        <div class="tab-pane fade" id="java" role="tabpanel" aria-labelledby="java-tab">
+          <div class="code-block">
+            <div class="code-header">
+              <i class="fab fa-java"></i> Java Example
+            </div>
+            <pre><code class="language-java">URL url = new URL("http://xyz.com/auth/login");
+HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+conn.setRequestMethod("POST");
+conn.setRequestProperty("Content-Type", "application/json");
+conn.setDoOutput(true);
+
+String loginJson = "{\"email\":\"n@gmail.com\",\"password\":\"12345\"}";
+try (OutputStream os = conn.getOutputStream()) {
+    byte[] input = loginJson.getBytes("utf-8");
+    os.write(input, 0, input.length);
+}
+
+BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), "utf-8"));
+StringBuilder response = new StringBuilder();
+String responseLine;
+while ((responseLine = br.readLine()) != null) {
+    response.append(responseLine.trim());
+}
+String token = new JSONObject(response.toString()).getString("token");
+
+// Use token to send message like the Python/PHP examples</code></pre>
+          </div>
+        </div>
+
+        <!-- Google Sheets/Apps Script tab -->
+        <div class="tab-pane fade" id="appscript" role="tabpanel" aria-labelledby="appscript-tab">
+          <div class="code-block">
+            <div class="code-header">
+              <i class="fas fa-table"></i> Google Sheets/Apps Script Example
+            </div>
+            <pre><code class="language-javascript">function loginAndSendFromSheet() {
+  const sheetName = "Sheet1";
+  const email = "xyz@gmail.com";
+  const password = "12345";
+  const loginUrl = "http://xyz.com/auth/login";
+  const sendUrl = "http://xyz.com/send-message";
+  
+  const loginPayload = JSON.stringify({
+    email: email,
+    password: password
+  });
+  
+  let token;
+  
+  // Step 1: Create sheet and headers if not exists
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = spreadsheet.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet(sheetName);
+    sheet.appendRow(["Name", "Description", "Phone", "Status"]);
+    Logger.log("?? Sheet and headers created.");
+    return; // Return here to let user fill data first
+  }
+  
+  // Step 2: Login to server
+  try {
+    const loginResponse = UrlFetchApp.fetch(loginUrl, {
+      method: "post",
+      contentType: "application/json",
+      payload: loginPayload,
+      muteHttpExceptions: true
+    });
+    
+    const loginData = JSON.parse(loginResponse.getContentText());
+    
+    if (loginData.token) {
+      token = loginData.token;
+      Logger.log("?? Logged in successfully. Token: " + token);
+    } else {
+      Logger.log("? Login failed. Response: " + loginResponse.getContentText());
+      return;
+    }
+  } catch (e) {
+    Logger.log("? Login error: " + e.message);
+    return;
+  }
+  
+  // Step 3: Read data and send messages
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    const name = data[i][0];
+    const desc = data[i][1];
+    const phone = data[i][2];
+    const status = data[i][3];
+    
+    if (!status && phone && desc) {
+      const fullPhone = phone.toString().startsWith("91") ? phone : "91" + phone;
+      const messageText = `Hi ${name}, ${desc}`;
+      
+      const sendPayload = JSON.stringify({
+        phone: fullPhone,
+        message: messageText
+      });
+      
+      try {
+        const sendResponse = UrlFetchApp.fetch(sendUrl, {
+          method: "post",
+          contentType: "application/json",
+          headers: {
+            Authorization: `Bearer ${token}`
+          },
+          payload: sendPayload,
+          muteHttpExceptions: true
+        });
+        
+        const result = JSON.parse(sendResponse.getContentText());
+        
+        if (result.status === "success") {
+          sheet.getRange(i + 1, 4).setValue("sent");
+          Logger.log(`? Message sent to ${fullPhone}`);
+        } else {
+          sheet.getRange(i + 1, 4).setValue("failed");
+          Logger.log(`? Failed to send to ${fullPhone}: ${sendResponse.getContentText()}`);
+        }
+      } catch (e) {
+        sheet.getRange(i + 1, 4).setValue("error");
+        Logger.log("? Error sending message: " + e.message);
+      }
+    }
+  }
+}</code></pre>
+          </div>
+          
+          <div class="tip-box mt-3">
+            <p><i class="fas fa-lightbulb"></i> <strong>Tip:</strong> Use a time-driven trigger to automatically run this script at specified intervals. To set up a trigger:</p>
+            <ol>
+              <li>replace the email and password in script and , <strong>execute the code in gsheet it generate template</strong> in that template you can see the sheet1 </li>
+              <li>Fill the data in sheet1 it auto send the description in that phonr number in sheet 1</li>
+              <li>In the Google Apps Script editor, go to <strong>Triggers</strong> in the left sidebar</li>
+              <li>Click <strong>Add Trigger</strong> at the bottom right</li>
+              <li>Choose the <code>loginAndSendFromSheet</code> function</li>
+              <li>Set "Select event source" to <strong>Time-driven</strong></li>
+              <li>Choose <strong>Minutes timer</strong> for frequency</li>
+              <li>Select how often you want the script to run</li>
+              <li>Click <strong>Save</strong></li>
+            </ol>
+            <p>This will automatically send messages from your sheet at regular intervals!</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+  <script>
+    // Highlight.js initialization
+    document.addEventListener('DOMContentLoaded', () => {
+      document.querySelectorAll('pre code').forEach((block) => {
+        hljs.highlightElement(block);
+      });
+    });
+    
+    // Setup user information
+    const userName = localStorage.getItem('userName') || 'User';
+    document.getElementById("userInfo").innerText = userName;
+    
+    // Set user avatar with initials
+    if (userName) {
+      const initials = userName.split(' ').map(name => name.charAt(0)).join('').toUpperCase();
+      document.getElementById("userAvatar").innerText = initials;
+    } else {
+      document.getElementById("userAvatar").innerHTML = '<i class="fas fa-user"></i>';
+    }
+    
+    // Logout function
+    function logout() {
+      localStorage.clear();
+      window.location.href = 'login.html';
+    }
+  </script>
+</body>
+</html>

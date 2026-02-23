@@ -1,0 +1,410 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>TBI - <%= DOMAIN %></title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; background: #f6f7fb; }
+    .wrap { max-width: 1100px; margin: 0 auto; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .card { background: #fff; border: 1px solid #e3e6ee; padding: 16px; border-radius: 14px; }
+    h1 { margin: 0 0 12px 0; }
+    h2 { margin: 0 0 10px 0; font-size: 18px; }
+    input, textarea { width: 100%; padding: 10px; border-radius: 10px; border: 1px solid #cfd6ea; box-sizing: border-box; }
+    textarea { height: 120px; }
+    button { padding: 10px 14px; border-radius: 10px; border: 1px solid #cfd6ea; background: #111827; color: #fff; cursor: pointer; }
+    button.danger { background: #b91c1c; }
+    .hint { font-size: 12px; color: #6b7280; margin-top: 6px; }
+    .pill { display: inline-block; padding: 6px 10px; border-radius: 999px; background: #eef2ff; color: #3730a3; font-size: 12px; }
+    .msg { padding: 10px 12px; border-radius: 10px; background: #ecfdf5; border: 1px solid #a7f3d0; margin-bottom: 14px; color: #065f46; }
+    .err { padding: 10px 12px; border-radius: 10px; background: #fef2f2; border: 1px solid #fecaca; margin-bottom: 14px; color: #7f1d1d; white-space: pre-wrap; }
+    .users { columns: 2; margin: 0; padding-left: 18px; }
+    .users li { padding: 4px 0; }
+    .top { display:flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+    .actions form { display: grid; gap: 10px; }
+    code { background: #f3f4f6; padding: 2px 6px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <h1>XMPP Admin Dashboard</h1>
+      <span class="pill"><%= DOMAIN %></span>
+    </div>
+
+    <% if (typeof msg !== "undefined" && msg) { %>
+      <div class="msg"><%= msg %></div>
+    <% } %>
+
+    <% if (typeof err !== "undefined" && err) { %>
+      <div class="err"><%= err %></div>
+    <% } %>
+
+    <div class="row">
+      <div class="card">
+        <h2>Users (<%= users.length %>)</h2>
+        <ul class="users">
+          <% users.forEach(u => { %>
+            <li><%= u %>@<%= DOMAIN %></li>
+          <% }) %>
+        </ul>
+        <div class="hint">
+          Users are read from Prosody <code>accounts/*.dat</code> files (no separate database).
+        </div>
+      </div>
+
+      <div class="card actions">
+        <h2>Add user</h2>
+        <form method="post" action="/users/add">
+          <input name="username" placeholder="username (eg: 7550300714)" required />
+          <input name="password" placeholder="password" required />
+          <button type="submit">Create user</button>
+          <div class="hint">Creates <code>username@<%= DOMAIN %></code></div>
+        </form>
+      </div>
+
+      <div class="card actions">
+        <h2>Edit user (reset password)</h2>
+        <form method="post" action="/users/passwd">
+          <input name="username" placeholder="username (eg: niraj)" required />
+          <input name="password" placeholder="new password" required />
+          <button type="submit">Update password</button>
+        </form>
+      </div>
+
+      <div class="card actions">
+        <h2>Delete user</h2>
+        <form method="post" action="/users/delete" onsubmit="return confirm('Delete this user permanently?');">
+          <input name="username" placeholder="username to delete" required />
+          <button class="danger" type="submit">Delete user</button>
+        </form>
+        <div class="hint">This will permanently remove the XMPP account from Prosody.</div>
+      </div>
+
+      <div class="card" style="grid-column: 1 / -1;">
+        <h2>Broadcast message (Bot: <code>broadcast</code>)</h2>
+        <form method="post" action="/broadcast">
+          <textarea name="text" placeholder="Message to send to all users..."></textarea><br/><br/>
+          <button type="submit">Send broadcast</button>
+        </form>
+        <div class="hint">
+          Sends a 1:1 chat message to every user using the bot account.
+        </div>
+      </div>
+
+      <div class="card" style="grid-column: 1 / -1;">
+        <h2>📸 Send Image with Caption</h2>
+        <div class="hint" style="margin-bottom: 16px;">
+          Upload and send an image with optional caption to a specific user via the message bot.
+        </div>
+        <form id="send-image-form" style="display: grid; gap: 12px;">
+          <input type="text" id="image-to" placeholder="Recipient JID (e.g., 7550300724@chat.thirupathybright.in)" required />
+          <input type="file" id="image-file" accept="image/*" required style="padding: 8px;" />
+          <input type="text" id="image-caption" placeholder="Caption (optional)" />
+          <button type="submit" style="background: #2563eb;">📤 Send Image</button>
+        </form>
+        <div id="image-status" style="margin-top: 12px; display: none;"></div>
+      </div>
+
+      <div class="card" style="grid-column: 1 / -1;">
+        <h2>🤖 AI Assistant (Auto-Reply Bot)</h2>
+        <div class="hint" style="margin-bottom: 16px;">
+          When enabled, the broadcast bot will automatically reply to incoming messages using Sarvam AI.
+          Users can chat with the bot and get intelligent responses powered by AI.
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <form method="post" action="/ai-bot/start" style="display: inline;">
+            <button type="submit" style="background: #059669;">🚀 Start AI Bot</button>
+          </form>
+          <form method="post" action="/ai-bot/stop" style="display: inline;">
+            <button type="submit" class="danger">🛑 Stop AI Bot</button>
+          </form>
+          <div id="ai-status" style="margin-left: auto;">
+            <span class="pill" style="background: #fef3c7; color: #92400e;">Checking status...</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="grid-column: 1 / -1;">
+        <h2>👥 Marketing Person Assignments (Data Access Control)</h2>
+        <div class="hint" style="margin-bottom: 16px;">
+          Assign marketing persons to users to restrict their data access. Users will only see orders assigned to their marketing person in the AI chatbot.
+          <strong>Security:</strong> This ensures users can only view data relevant to their assigned marketing person.
+        </div>
+
+        <div style="margin-bottom: 16px;">
+          <button id="load-marketing-data" onclick="loadMarketingData()" style="background: #2563eb;">📊 Load Marketing Person Data</button>
+        </div>
+
+        <div id="marketing-content" style="display: none;">
+          <div style="margin-bottom: 16px; padding: 12px; background: #f3f4f6; border-radius: 10px;">
+            <strong>Available Marketing Persons:</strong>
+            <div id="marketing-persons-list" style="margin-top: 8px; display: flex; flex-wrap: gap; gap: 8px;">
+              <span class="pill">Loading...</span>
+            </div>
+          </div>
+
+          <table style="width: 100%; border-collapse: collapse; margin-top: 16px;">
+            <thead>
+              <tr style="background: #f9fafb; border-bottom: 2px solid #e5e7eb;">
+                <th style="padding: 12px; text-align: left;">User (JID)</th>
+                <th style="padding: 12px; text-align: left;">Assigned Marketing Person</th>
+                <th style="padding: 12px; text-align: center;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="assignments-table">
+              <tr>
+                <td colspan="3" style="padding: 20px; text-align: center; color: #6b7280;">
+                  Loading assignments...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Handle image upload form
+    document.getElementById('send-image-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const to = document.getElementById('image-to').value;
+      const imageFile = document.getElementById('image-file').files[0];
+      const caption = document.getElementById('image-caption').value;
+      const statusEl = document.getElementById('image-status');
+
+      if (!imageFile) {
+        statusEl.style.display = 'block';
+        statusEl.className = 'err';
+        statusEl.textContent = 'Please select an image file';
+        return;
+      }
+
+      // Show loading
+      statusEl.style.display = 'block';
+      statusEl.className = 'msg';
+      statusEl.textContent = '📤 Uploading image...';
+
+      try {
+        const formData = new FormData();
+        formData.append('to', to);
+        formData.append('image', imageFile);
+        if (caption) {
+          formData.append('caption', caption);
+        }
+
+        const response = await fetch('/send-image', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          statusEl.className = 'msg';
+          statusEl.textContent = `✅ Image sent successfully to ${to}${caption ? ' with caption: "' + caption + '"' : ''}`;
+          // Clear form
+          document.getElementById('image-to').value = '';
+          document.getElementById('image-file').value = '';
+          document.getElementById('image-caption').value = '';
+        } else {
+          statusEl.className = 'err';
+          statusEl.textContent = `❌ Failed to send image: ${data.error}`;
+        }
+      } catch (error) {
+        console.error('Error sending image:', error);
+        statusEl.className = 'err';
+        statusEl.textContent = `❌ Error: ${error.message}`;
+      }
+    });
+
+    // Check AI bot status on page load
+    async function checkAIStatus() {
+      try {
+        const response = await fetch('/ai-bot/status');
+        const data = await response.json();
+        const statusEl = document.getElementById('ai-status');
+
+        if (data.running) {
+          statusEl.innerHTML = '<span class="pill" style="background: #d1fae5; color: #065f46;">✅ AI Bot Running</span>';
+        } else {
+          statusEl.innerHTML = '<span class="pill" style="background: #fee2e2; color: #991b1b;">⭕ AI Bot Offline</span>';
+        }
+      } catch (error) {
+        console.error('Failed to check AI status:', error);
+      }
+    }
+
+    // Check status on load and every 5 seconds
+    checkAIStatus();
+    setInterval(checkAIStatus, 5000);
+
+    // Marketing Person Management
+    let marketingPersons = [];
+    let assignments = {};
+    let users = [];
+
+    async function loadMarketingData() {
+      try {
+        document.getElementById('marketing-content').style.display = 'block';
+
+        // Fetch marketing persons from database
+        const mpResponse = await fetch('/marketing-persons');
+        const mpData = await mpResponse.json();
+
+        if (mpData.success) {
+          marketingPersons = mpData.marketingPersons;
+          displayMarketingPersons();
+        }
+
+        // Fetch assignments
+        const assignResponse = await fetch('/marketing-persons/assignments');
+        const assignData = await assignResponse.json();
+
+        if (assignData.success) {
+          assignments = assignData.assignments;
+          users = assignData.users;
+          displayAssignments();
+        }
+      } catch (error) {
+        console.error('Failed to load marketing data:', error);
+        alert('Failed to load marketing person data');
+      }
+    }
+
+    function displayMarketingPersons() {
+      const listEl = document.getElementById('marketing-persons-list');
+
+      if (marketingPersons.length === 0) {
+        listEl.innerHTML = '<span class="pill" style="background: #fee2e2; color: #991b1b;">No marketing persons found in database</span>';
+      } else {
+        listEl.innerHTML = marketingPersons.map(mp =>
+          `<span class="pill" style="background: #dbeafe; color: #1e40af;">${mp}</span>`
+        ).join(' ');
+      }
+    }
+
+    function displayAssignments() {
+      const tableEl = document.getElementById('assignments-table');
+
+      if (users.length === 0) {
+        tableEl.innerHTML = `
+          <tr>
+            <td colspan="3" style="padding: 20px; text-align: center; color: #6b7280;">
+              No users found
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tableEl.innerHTML = users.map(userJid => {
+        const assignedMPs = assignments[userJid] || [];
+        // Handle backward compatibility - convert string to array
+        const assignedArray = Array.isArray(assignedMPs) ? assignedMPs : (assignedMPs ? [assignedMPs] : []);
+
+        return `
+          <tr style="border-bottom: 1px solid #e5e7eb;">
+            <td style="padding: 12px;">
+              <code style="font-size: 13px;">${userJid}</code>
+            </td>
+            <td style="padding: 12px;">
+              <select id="mp-select-${userJid.replace(/[@.]/g, '_')}"
+                      multiple
+                      size="5"
+                      style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #d1d5db;"
+                      onchange="handleSelectionChange('${userJid}')">
+                ${marketingPersons.map(mp =>
+                  `<option value="${mp}" ${assignedArray.includes(mp) ? 'selected' : ''}>${mp}</option>`
+                ).join('')}
+              </select>
+              <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">
+                Hold Ctrl/Cmd to select multiple
+              </div>
+            </td>
+            <td style="padding: 12px; text-align: center;">
+              ${assignedArray.length > 0 ? `
+                <div style="margin-bottom: 8px;">
+                  ${assignedArray.map(mp =>
+                    `<span class="pill" style="background: #dbeafe; color: #1e40af; font-size: 11px; margin: 2px; display: inline-block;">${mp}</span>`
+                  ).join('')}
+                </div>
+                <button onclick="removeAssignment('${userJid}')"
+                        style="padding: 6px 12px; font-size: 13px; background: #dc2626;">
+                  Remove All
+                </button>
+              ` : `
+                <span style="color: #9ca3af; font-size: 13px;">No assignment</span>
+              `}
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function handleSelectionChange(userJid) {
+      const selectId = `mp-select-${userJid.replace(/[@.]/g, '_')}`;
+      const selectEl = document.getElementById(selectId);
+      const selectedOptions = Array.from(selectEl.selectedOptions).map(opt => opt.value);
+
+      if (selectedOptions.length > 0) {
+        assignMarketingPersons(userJid, selectedOptions);
+      }
+    }
+
+    async function assignMarketingPersons(userJid, marketingPersons) {
+      try {
+        const response = await fetch('/marketing-persons/assign', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userJid, marketingPersons })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          assignments[userJid] = marketingPersons;
+          displayAssignments();
+          const mpList = marketingPersons.join(', ');
+          alert(`✅ Assigned ${mpList} to ${userJid}`);
+        } else {
+          alert('Failed to assign: ' + data.error);
+        }
+      } catch (error) {
+        console.error('Failed to assign:', error);
+        alert('Failed to assign marketing persons');
+      }
+    }
+
+    async function removeAssignment(userJid) {
+      if (!confirm(`Remove marketing person assignment for ${userJid}?`)) {
+        return;
+      }
+
+      try {
+        const response = await fetch('/marketing-persons/remove', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userJid })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          delete assignments[userJid];
+          displayAssignments();
+          alert(`✅ Removed assignment for ${userJid}`);
+        } else {
+          alert('Failed to remove: ' + data.message);
+        }
+      } catch (error) {
+        console.error('Failed to remove:', error);
+        alert('Failed to remove assignment');
+      }
+    }
+  </script>
+</body>
+</html>
+

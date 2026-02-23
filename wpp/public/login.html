@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Login - WhatsApp Dashboard</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet" />
+  <style>
+    :root {
+      --primary-color: #128C7E;
+      --secondary-color: #25D366;
+      --dark-color: #075E54;
+      --light-color: #DCF8C6;
+      --gray-color: #f0f2f5;
+    }
+    
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #f5f5f5;
+      height: 100vh;
+    }
+    
+    .login-container {
+      max-width: 450px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+    
+    .login-card {
+      background-color: white;
+      border-radius: 12px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+      padding: 35px;
+      margin-top: 50px;
+      transition: all 0.3s ease;
+    }
+    
+    .login-card:hover {
+      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.12);
+      transform: translateY(-5px);
+    }
+    
+    .login-header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    
+    .login-logo {
+      width: 75px;
+      height: 75px;
+      border-radius: 18px;
+      background-color: var(--primary-color);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 15px;
+      box-shadow: 0 5px 15px rgba(18, 140, 126, 0.25);
+    }
+    
+    .login-logo i {
+      font-size: 40px;
+      color: white;
+    }
+    
+    .login-title {
+      font-weight: 700;
+      color: var(--dark-color);
+      margin-bottom: 5px;
+    }
+    
+    .login-subtitle {
+      color: #6c757d;
+      font-size: 0.95rem;
+    }
+    
+    .form-group {
+      margin-bottom: 20px;
+      position: relative;
+    }
+    
+    .form-floating {
+      margin-bottom: 20px;
+    }
+    
+    .form-floating label {
+      color: #6c757d;
+    }
+    
+    .form-floating .form-control:focus {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 0.25rem rgba(18, 140, 126, 0.25);
+    }
+    
+    .form-floating .form-control:focus + label {
+      color: var(--primary-color);
+    }
+
+    .input-with-icon {
+      position: relative;
+    }
+    
+    .input-icon {
+      position: absolute;
+      top: 50%;
+      left: 10px;
+      transform: translateY(-50%);
+      color: #adb5bd;
+      z-index: 10;
+    }
+    
+    .input-with-icon .form-control {
+      padding-left: 35px;
+    }
+    
+    .btn-primary {
+      background-color: var(--primary-color);
+      border-color: var(--primary-color);
+      padding: 12px 0;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      box-shadow: 0 4px 10px rgba(18, 140, 126, 0.2);
+      transition: all 0.3s ease;
+    }
+    
+    .btn-primary:hover, .btn-primary:focus {
+      background-color: var(--dark-color);
+      border-color: var(--dark-color);
+      box-shadow: 0 6px 15px rgba(18, 140, 126, 0.3);
+      transform: translateY(-2px);
+    }
+    
+    .register-link {
+      text-align: center;
+      margin-top: 25px;
+      color: #6c757d;
+    }
+    
+    .register-link a {
+      color: var(--primary-color);
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }
+    
+    .register-link a:hover {
+      color: var(--dark-color);
+      text-decoration: underline;
+    }
+    
+    .password-toggle {
+      position: absolute;
+      top: 50%;
+      right: 10px;
+      transform: translateY(-50%);
+      border: none;
+      background: none;
+      color: #adb5bd;
+      cursor: pointer;
+      z-index: 10;
+    }
+    
+    .password-toggle:hover {
+      color: var(--primary-color);
+    }
+    
+    .alert {
+      border-radius: 8px;
+      border: none;
+      padding: 15px;
+      margin-top: 20px;
+      display: flex;
+      align-items: center;
+    }
+    
+    .alert-success {
+      background-color: #d1e7dd;
+      color: #146c43;
+      border-left: 4px solid #0f5132;
+    }
+    
+    .alert-danger {
+      background-color: #f8d7da;
+      color: #b02a37;
+      border-left: 4px solid #dc3545;
+    }
+    
+    .alert i {
+      margin-right: 10px;
+      font-size: 18px;
+    }
+    
+    .hide {
+      display: none;
+    }
+    
+    .form-check-input:checked {
+      background-color: var(--primary-color);
+      border-color: var(--primary-color);
+    }
+    
+    .footer {
+      text-align: center;
+      margin-top: 30px;
+      color: #6c757d;
+      font-size: 0.85rem;
+    }
+    
+    /* Loading effect */
+    .spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      margin-right: 10px;
+      border: 3px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top-color: #fff;
+      animation: none; /* Animation disabled by default */
+    }
+    
+    .spinner.active {
+      animation: spin 1s ease infinite; /* Animation enabled when active class is added */
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* Shake animation for invalid login */
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+      20%, 40%, 60%, 80% { transform: translateX(5px); }
+    }
+
+    .shake {
+      animation: shake 0.6s cubic-bezier(.36,.07,.19,.97) both;
+    }
+    
+    .wave {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 150px;
+      background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 320'%3E%3Cpath fill='%23128C7E' fill-opacity='0.1' d='M0,224L60,213.3C120,203,240,181,360,192C480,203,600,245,720,245.3C840,245,960,203,1080,186.7C1200,171,1320,181,1380,186.7L1440,192L1440,320L1380,320C1320,320,1200,320,1080,320C960,320,840,320,720,320C600,320,480,320,360,320C240,320,120,320,60,320L0,320Z'%3E%3C/path%3E%3C/svg%3E");
+      background-size: cover;
+      z-index: -1;
+    }
+  </style>
+</head>
+<body>
+  <!-- Wave background -->
+  <div class="wave"></div>
+
+  <div class="container login-container">
+    <div class="login-card">
+      <div class="login-header">
+        <div class="login-logo">
+          <i class="fab fa-whatsapp"></i>
+        </div>
+        <h2 class="login-title">Welcome Back</h2>
+        <p class="login-subtitle">Log in to your WhatsApp Dashboard</p>
+      </div>
+      
+      <form id="loginForm">
+        <div class="form-floating mb-3">
+          <input 
+            type="email" 
+            class="form-control" 
+            id="email" 
+            placeholder="Email" 
+            required 
+            autocomplete="email"
+          >
+          <label for="email"><i class="fas fa-envelope me-2"></i>Email address</label>
+        </div>
+        
+        <div class="form-floating mb-3">
+          <input 
+            type="password" 
+            class="form-control" 
+            id="password" 
+            placeholder="Password" 
+            required
+          >
+          <label for="password"><i class="fas fa-lock me-2"></i>Password</label>
+          <button type="button" class="password-toggle" id="togglePassword">
+            <i class="far fa-eye"></i>
+          </button>
+        </div>
+        
+        <div class="d-flex justify-content-between align-items-center mb-4">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" value="" id="rememberMe">
+            <label class="form-check-label" for="rememberMe">
+              Remember me
+            </label>
+          </div>
+          <a href="#" class="text-decoration-none" style="color: var(--primary-color); font-weight: 500;">Forgot password?</a>
+        </div>
+        
+        <button type="submit" class="btn btn-primary w-100" id="loginButton">
+          <span class="spinner hide" id="loginSpinner"></span>
+          <span id="loginText">Log In</span>
+        </button>
+      </form>
+      
+      <div id="message" class="mt-3"></div>
+      
+      <p class="register-link">
+        Don't have an account? <a href="register.html">Register here</a>
+      </p>
+    </div>
+    
+    <div class="footer">
+      <p>&copy; 2025 WhatsApp Dashboard. All rights reserved.</p>
+    </div>
+  </div>
+
+  <script>
+    // Toggle password visibility
+    document.getElementById('togglePassword').addEventListener('click', function() {
+      const passwordInput = document.getElementById('password');
+      const toggleIcon = this.querySelector('i');
+      
+      if (passwordInput.type === 'password') {
+        passwordInput.type = 'text';
+        toggleIcon.classList.remove('fa-eye');
+        toggleIcon.classList.add('fa-eye-slash');
+      } else {
+        passwordInput.type = 'password';
+        toggleIcon.classList.remove('fa-eye-slash');
+        toggleIcon.classList.add('fa-eye');
+      }
+    });
+    
+    // Login form submission
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      const messageDiv = document.getElementById('message');
+      const loginButton = document.getElementById('loginButton');
+      const loginSpinner = document.getElementById('loginSpinner');
+      const loginText = document.getElementById('loginText');
+      const loginCard = document.querySelector('.login-card');
+      
+      // Show loading state
+      loginButton.disabled = true;
+      loginSpinner.classList.remove('hide');
+      loginSpinner.classList.add('active'); // Add active class to enable animation
+      loginText.innerText = 'Logging in...';
+      messageDiv.innerHTML = '';
+      
+      try {
+        const res = await fetch('/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+
+        const data = await res.json();
+
+        if (res.ok && data.token && data.user) {
+          // Store user data
+          localStorage.setItem('token', data.token);
+          localStorage.setItem('userId', data.user.id);
+          localStorage.setItem('userName', data.user.name);
+          localStorage.setItem('userEmail', data.user.email);
+
+          // Show success message
+          messageDiv.innerHTML = `
+            <div class="alert alert-success">
+              <i class="fas fa-check-circle"></i>
+              Login successful! Redirecting to dashboard...
+            </div>`;
+            
+          // Redirect after delay
+          setTimeout(() => {
+            window.location.href = 'dashboard.html';
+          }, 1500);
+        } else {
+          // Show error message and reset button
+          messageDiv.innerHTML = `
+            <div class="alert alert-danger">
+              <i class="fas fa-times-circle"></i>
+              ${data.message || 'Invalid email or password. Please try again.'}
+            </div>`;
+            
+          loginButton.disabled = false;
+          loginSpinner.classList.add('hide');
+          loginSpinner.classList.remove('active'); // Remove active class to disable animation
+          loginText.innerText = 'Log In';
+          
+          // Add shake animation
+          loginCard.classList.add('shake');
+          setTimeout(() => {
+            loginCard.classList.remove('shake');
+          }, 600);
+        }
+      } catch (err) {
+        console.error('Error during login request:', err);
+        
+        // Show connection error
+        messageDiv.innerHTML = `
+          <div class="alert alert-danger">
+            <i class="fas fa-wifi"></i>
+            Connection error: ${err.message || 'Could not connect to server'}. Please check your internet connection.
+          </div>`;
+          
+        loginButton.disabled = false;
+        loginSpinner.classList.add('hide');
+        loginSpinner.classList.remove('active'); // Remove active class to disable animation
+        loginText.innerText = 'Log In';
+      }
+    });
+    
+    // Check if user is already logged in
+    document.addEventListener('DOMContentLoaded', () => {
+      const token = localStorage.getItem('token');
+      if (token) {
+        window.location.href = 'dashboard.html';
+      }
+    });
+  </script>
+</body>
+</html>

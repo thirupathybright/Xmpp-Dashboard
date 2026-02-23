@@ -1,0 +1,1134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>WPP WhatsApp AI Dashboard</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet" />
+  <style>
+    :root {
+      --primary-color: #128C7E;
+      --secondary-color: #25D366;
+      --dark-color: #075E54;
+      --ai-color: #6366f1;
+      --db-color: #8b5cf6;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #f5f5f5;
+    }
+
+    .navbar {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color)) !important;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+
+    .dashboard-container {
+      background-color: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+      padding: 24px;
+      margin-top: 24px;
+      margin-bottom: 24px;
+    }
+
+    .session-card {
+      border: 2px solid #e0e0e0;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .session-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 4px;
+      height: 100%;
+      background: var(--primary-color);
+    }
+
+    .session-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
+    }
+
+    .session-card.connected::before {
+      background: var(--secondary-color);
+    }
+
+    .session-card.connected {
+      border-color: var(--secondary-color);
+      background-color: #f0fdf4;
+    }
+
+    .session-card.ai-enabled::before {
+      background: linear-gradient(180deg, var(--ai-color), var(--db-color));
+    }
+
+    .stats-card {
+      background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+      color: white;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+
+    .stats-card i {
+      font-size: 2.5rem;
+      opacity: 0.2;
+      position: absolute;
+      right: 20px;
+      top: 20px;
+    }
+
+    .feature-toggle-container {
+      background-color: #f8f9fa;
+      border-radius: 8px;
+      padding: 15px;
+      margin-top: 15px;
+    }
+
+    .feature-toggle {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px;
+      margin-bottom: 8px;
+      background-color: white;
+      border-radius: 6px;
+      border: 1px solid #e0e0e0;
+      transition: all 0.2s ease;
+    }
+
+    .feature-toggle:hover {
+      border-color: var(--primary-color);
+      transform: translateX(5px);
+    }
+
+    .feature-toggle.active {
+      border-color: var(--secondary-color);
+      background-color: #f0fdf4;
+    }
+
+    .feature-toggle.ai-active {
+      border-color: var(--ai-color);
+      background: linear-gradient(135deg, #f0f9ff, #ede9fe);
+    }
+
+    .feature-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-right: 12px;
+    }
+
+    .feature-icon.ai {
+      background: linear-gradient(135deg, var(--ai-color), var(--db-color));
+      color: white;
+    }
+
+    .feature-icon.ot {
+      background-color: #fbbf24;
+      color: white;
+    }
+
+    .ai-badge {
+      background: linear-gradient(135deg, var(--ai-color), var(--db-color));
+      color: white;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      margin-left: 8px;
+    }
+
+    .db-badge {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: white;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      margin-left: 8px;
+    }
+
+    .qr-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+      background-color: white;
+      border-radius: 12px;
+      margin-top: 15px;
+    }
+
+    .btn-whatsapp {
+      background-color: var(--secondary-color);
+      border: none;
+      color: white;
+      font-weight: 600;
+      padding: 10px 20px;
+      border-radius: 8px;
+      transition: all 0.3s ease;
+    }
+
+    .btn-whatsapp:hover {
+      background-color: var(--primary-color);
+      transform: translateY(-2px);
+      color: white;
+    }
+
+    .ai-stats-card {
+      background: linear-gradient(135deg, var(--ai-color), var(--db-color));
+      color: white;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .db-stats-card {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: white;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .toast-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 1050;
+    }
+
+    .loader {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid var(--primary-color);
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 20px auto;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <nav class="navbar navbar-expand-lg navbar-dark">
+    <div class="container">
+      <a class="navbar-brand" href="#">
+        <i class="fab fa-whatsapp"></i> WPP WhatsApp AI Dashboard
+      </a>
+      <div class="d-flex gap-2">
+        <span class="badge bg-light text-dark">
+          <i class="fas fa-robot me-1"></i> AI Enabled
+        </span>
+        <span class="badge bg-light text-dark">
+          <i class="fas fa-database me-1"></i> SQL Access
+        </span>
+      </div>
+    </div>
+  </nav>
+
+  <div class="toast-container"></div>
+
+  <div class="container">
+    <div class="dashboard-container">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <h3><i class="fas fa-chart-line me-2"></i>Dashboard</h3>
+        <button onclick="addNewSession()" class="btn btn-whatsapp">
+          <i class="fas fa-plus me-2"></i> Add New Session
+        </button>
+      </div>
+
+      <!-- Stats -->
+      <div class="row mb-4">
+        <div class="col-md-3">
+          <div class="stats-card position-relative">
+            <i class="fas fa-mobile-alt"></i>
+            <h5>Total Sessions</h5>
+            <h2 id="totalSessions">0</h2>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="stats-card position-relative">
+            <i class="fas fa-check-circle"></i>
+            <h5>Connected</h5>
+            <h2 id="connectedSessions">0</h2>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="ai-stats-card position-relative">
+            <i class="fas fa-robot"></i>
+            <h5>AI Mode Sessions</h5>
+            <h2 id="aiSessions">0</h2>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="db-stats-card position-relative">
+            <i class="fas fa-database"></i>
+            <h5>DB Access</h5>
+            <h2 id="dbStatus">Ready</h2>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <ul class="nav nav-tabs mb-3" id="mainTab" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button class="nav-link active" id="sessions-tab" data-bs-toggle="tab" data-bs-target="#sessions" type="button">
+            <i class="fas fa-mobile-alt me-2"></i>Sessions
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="ai-tab" data-bs-toggle="tab" data-bs-target="#ai" type="button">
+            <i class="fas fa-robot me-2"></i>AI Management
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="db-tab" data-bs-toggle="tab" data-bs-target="#db" type="button">
+            <i class="fas fa-database me-2"></i>Database
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="send-tab" data-bs-toggle="tab" data-bs-target="#send" type="button">
+            <i class="fas fa-paper-plane me-2"></i>Send Message
+          </button>
+        </li>
+      </ul>
+
+      <div class="tab-content" id="mainTabContent">
+        <!-- Sessions Tab -->
+        <div class="tab-pane fade show active" id="sessions" role="tabpanel">
+          <div id="sessionsList">
+            <div class="text-center py-5 text-muted">
+              <i class="fas fa-mobile-alt fa-3x mb-3"></i>
+              <p>No active sessions. Click "Add New Session" to start.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI Management Tab -->
+        <div class="tab-pane fade" id="ai" role="tabpanel">
+          <div class="card">
+            <div class="card-body">
+              <h4><i class="fas fa-robot me-2"></i>AI Chatbot Management</h4>
+              <p class="text-muted">Manage AI conversations and chat memory</p>
+
+              <div id="aiStatsContent">
+                <div class="text-center py-4">
+                  <div class="loader"></div>
+                  <p class="text-muted mt-3">Loading AI statistics...</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Database Tab -->
+        <div class="tab-pane fade" id="db" role="tabpanel">
+          <div class="card">
+            <div class="card-body">
+              <h4><i class="fas fa-database me-2"></i>Database Management</h4>
+              <p class="text-muted">Test database connection and view sample data</p>
+
+              <button onclick="testDatabaseConnection()" class="btn btn-primary mb-3">
+                <i class="fas fa-plug me-2"></i> Test Database Connection
+              </button>
+
+              <button onclick="getSampleOrders()" class="btn btn-secondary mb-3 ms-2">
+                <i class="fas fa-list me-2"></i> Get Sample Orders
+              </button>
+
+              <div id="dbTestResult"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Send Message Tab -->
+        <div class="tab-pane fade" id="send" role="tabpanel">
+          <div class="card">
+            <div class="card-body">
+              <h4 class="mb-3"><i class="fas fa-paper-plane me-2"></i>Send Message</h4>
+
+              <div class="mb-3">
+                <label for="messageFlag" class="form-label">Message Type (Flag)</label>
+                <select class="form-select" id="messageFlag">
+                  <option value="checkin_checkout">Check-in / Check-out</option>
+                  <option value="ot_message">OT Message</option>
+                  <option value="helpticket">Help Ticket</option>
+                  <option value="delegation">Delegation</option>
+                  <option value="ncr">NCR</option>
+                  <option value="pc_automation">PC Automation</option>
+                  <option value="group_message">Group Message</option>
+                  <option value="ai_mode">AI Mode</option>
+                </select>
+                <small class="text-muted">Select the feature type for this message. Only sessions with this flag enabled will be used.</small>
+              </div>
+
+              <div class="mb-3">
+                <label for="phoneNumber" class="form-label">Phone Number</label>
+                <input type="text" class="form-control" id="phoneNumber" placeholder="919876543210">
+                <small class="text-muted">Format: 919876543210 (country code + number, without @c.us)</small>
+              </div>
+
+              <div class="mb-3">
+                <label for="messageText" class="form-label">Message</label>
+                <textarea class="form-control" id="messageText" rows="4" placeholder="Enter your message here..."></textarea>
+              </div>
+
+              <button onclick="sendMessage()" class="btn btn-whatsapp">
+                <i class="fas fa-paper-plane me-2"></i> Send Message
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.socket.io/4.4.1/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs2@0.0.2/qrcode.min.js"></script>
+  <script>
+let allSessions = [];
+const qrCodes = new Map();
+
+const socket = io();
+
+// Socket listeners
+socket.on('qr', (data) => {
+  const { sessionId, qrCode, qrRaw } = data;
+  console.log('🔔 QR Code received for session:', sessionId);
+
+  const qrData = qrRaw || qrCode;
+  qrCodes.set(sessionId, qrData);
+
+  setTimeout(() => {
+    updateSessionQR(sessionId, qrData);
+  }, 500);
+});
+
+socket.on('sessions', (sessionList) => {
+  allSessions = sessionList;
+  updateStats();
+  renderSessions();
+});
+
+// Update stats
+function updateStats() {
+  const totalSessions = allSessions.length;
+  const connectedSessions = allSessions.filter(s => s.status.isLoggedIn).length;
+  const aiSessions = allSessions.filter(s => {
+    const assignments = s.assignments || s.dbData || {};
+    return assignments.ai_mode_enabled;
+  }).length;
+
+  document.getElementById('totalSessions').textContent = totalSessions;
+  document.getElementById('connectedSessions').textContent = connectedSessions;
+  document.getElementById('aiSessions').textContent = aiSessions;
+}
+
+// Render all sessions
+function renderSessions() {
+  const container = document.getElementById('sessionsList');
+
+  if (allSessions.length === 0) {
+    container.innerHTML = `
+      <div class="text-center py-5 text-muted">
+        <i class="fas fa-mobile-alt fa-3x mb-3"></i>
+        <p>No active sessions. Click "Add New Session" to start.</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = '';
+
+  allSessions.forEach(session => {
+    const sessionCard = document.createElement('div');
+    const statusClass = session.status.isLoggedIn ? 'connected' : '';
+    const aiEnabled = session.assignments && session.assignments.ai_mode_enabled;
+
+    sessionCard.className = `session-card ${statusClass} ${aiEnabled ? 'ai-enabled' : ''}`;
+
+    let cardContent = `
+      <div class="d-flex justify-content-between align-items-start mb-3">
+        <div>
+          <h5 class="mb-1">
+            <i class="fas fa-mobile-alt me-2"></i>${session.sessionId}
+            ${aiEnabled ? '<span class="ai-badge"><i class="fas fa-robot me-1"></i>AI Mode</span>' : ''}
+          </h5>
+          ${session.phoneNumber ? `<p class="text-muted mb-0"><i class="fas fa-phone me-2"></i>${session.phoneNumber}</p>` : ''}
+        </div>
+        <button onclick="logoutSession('${session.sessionId}')" class="btn btn-sm btn-outline-danger">
+          <i class="fas fa-sign-out-alt"></i> Logout
+        </button>
+      </div>
+    `;
+
+    // Show feature toggles for all sessions (connected or not)
+    cardContent += `
+      <div class="feature-toggle-container">
+        <h6 class="mb-3"><i class="fas fa-cog me-2"></i>Feature Assignments</h6>
+
+          <!-- AI Mode Toggle -->
+          <div class="feature-toggle ${session.assignments && session.assignments.ai_mode_enabled ? 'ai-active' : ''}"
+               onclick="toggleFeature('${session.sessionId}', 'ai_mode_enabled')"
+               style="cursor: pointer;">
+            <div class="d-flex align-items-center">
+              <div class="feature-icon ai">
+                <i class="fas fa-robot"></i>
+              </div>
+              <div>
+                <strong>AI Chatbot Mode</strong>
+                <small class="d-block text-muted">Auto-reply with AI + SQL database access</small>
+              </div>
+            </div>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox"
+                     ${session.assignments && session.assignments.ai_mode_enabled ? 'checked' : ''}
+                     style="pointer-events: none;">
+            </div>
+          </div>
+
+          <!-- OT Mode Toggle -->
+          <div class="feature-toggle ${session.assignments && session.assignments.ot_message_enabled ? 'active' : ''}"
+               onclick="toggleFeature('${session.sessionId}', 'ot_message_enabled')"
+               style="cursor: pointer;">
+            <div class="d-flex align-items-center">
+              <div class="feature-icon ot">
+                <i class="fas fa-clock"></i>
+              </div>
+              <div>
+                <strong>OT Auto-Reply</strong>
+                <small class="d-block text-muted">Auto-reply to "OT" messages</small>
+              </div>
+            </div>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox"
+                     ${session.assignments && session.assignments.ot_message_enabled ? 'checked' : ''}
+                     style="pointer-events: none;">
+            </div>
+          </div>
+
+          <!-- Check-in/Check-out Toggle -->
+          <div class="feature-toggle ${session.assignments && session.assignments.checkin_checkout_enabled ? 'active' : ''}"
+               onclick="toggleFeature('${session.sessionId}', 'checkin_checkout_enabled')"
+               style="cursor: pointer;">
+            <div class="d-flex align-items-center">
+              <div class="feature-icon" style="background-color: #10b981; color: white;">
+                <i class="fas fa-user-check"></i>
+              </div>
+              <div>
+                <strong>Check-in / Check-out</strong>
+                <small class="d-block text-muted">Employee attendance tracking</small>
+              </div>
+            </div>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox"
+                     ${session.assignments && session.assignments.checkin_checkout_enabled ? 'checked' : ''}
+                     style="pointer-events: none;">
+            </div>
+          </div>
+
+          <!-- Help Ticket Toggle -->
+          <div class="feature-toggle ${session.assignments && session.assignments.helpticket_enabled ? 'active' : ''}"
+               onclick="toggleFeature('${session.sessionId}', 'helpticket_enabled')"
+               style="cursor: pointer;">
+            <div class="d-flex align-items-center">
+              <div class="feature-icon" style="background-color: #f59e0b; color: white;">
+                <i class="fas fa-ticket-alt"></i>
+              </div>
+              <div>
+                <strong>Help Ticket</strong>
+                <small class="d-block text-muted">Support ticket management</small>
+              </div>
+            </div>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox"
+                     ${session.assignments && session.assignments.helpticket_enabled ? 'checked' : ''}
+                     style="pointer-events: none;">
+            </div>
+          </div>
+
+          <!-- Delegation Toggle -->
+          <div class="feature-toggle ${session.assignments && session.assignments.delegation_enabled ? 'active' : ''}"
+               onclick="toggleFeature('${session.sessionId}', 'delegation_enabled')"
+               style="cursor: pointer;">
+            <div class="d-flex align-items-center">
+              <div class="feature-icon" style="background-color: #8b5cf6; color: white;">
+                <i class="fas fa-users-cog"></i>
+              </div>
+              <div>
+                <strong>Delegation</strong>
+                <small class="d-block text-muted">Task delegation notifications</small>
+              </div>
+            </div>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox"
+                     ${session.assignments && session.assignments.delegation_enabled ? 'checked' : ''}
+                     style="pointer-events: none;">
+            </div>
+          </div>
+
+          <!-- NCR Toggle -->
+          <div class="feature-toggle ${session.assignments && session.assignments.ncr_enabled ? 'active' : ''}"
+               onclick="toggleFeature('${session.sessionId}', 'ncr_enabled')"
+               style="cursor: pointer;">
+            <div class="d-flex align-items-center">
+              <div class="feature-icon" style="background-color: #ef4444; color: white;">
+                <i class="fas fa-exclamation-triangle"></i>
+              </div>
+              <div>
+                <strong>NCR</strong>
+                <small class="d-block text-muted">Non-Conformance Report notifications</small>
+              </div>
+            </div>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox"
+                     ${session.assignments && session.assignments.ncr_enabled ? 'checked' : ''}
+                     style="pointer-events: none;">
+            </div>
+          </div>
+
+          <!-- PC Automation Toggle -->
+          <div class="feature-toggle ${session.assignments && session.assignments.pc_automation_enabled ? 'active' : ''}"
+               onclick="toggleFeature('${session.sessionId}', 'pc_automation_enabled')"
+               style="cursor: pointer;">
+            <div class="d-flex align-items-center">
+              <div class="feature-icon" style="background-color: #3b82f6; color: white;">
+                <i class="fas fa-desktop"></i>
+              </div>
+              <div>
+                <strong>PC Automation</strong>
+                <small class="d-block text-muted">PC control and automation</small>
+              </div>
+            </div>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox"
+                     ${session.assignments && session.assignments.pc_automation_enabled ? 'checked' : ''}
+                     style="pointer-events: none;">
+            </div>
+          </div>
+
+          <!-- Group Message Toggle -->
+          <div class="feature-toggle ${session.assignments && session.assignments.group_message_enabled ? 'active' : ''}"
+               onclick="toggleFeature('${session.sessionId}', 'group_message_enabled')"
+               style="cursor: pointer;">
+            <div class="d-flex align-items-center">
+              <div class="feature-icon" style="background-color: #06b6d4; color: white;">
+                <i class="fas fa-users"></i>
+              </div>
+              <div>
+                <strong>Group Message</strong>
+                <small class="d-block text-muted">Group messaging features</small>
+              </div>
+            </div>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox"
+                     ${session.assignments && session.assignments.group_message_enabled ? 'checked' : ''}
+                     style="pointer-events: none;">
+            </div>
+          </div>
+      </div>
+
+      ${session.status.isLoggedIn && session.usageStats ? `
+        <div class="alert alert-info mt-3 mb-0">
+          <small>
+            <i class="fas fa-info-circle me-2"></i>
+            <strong>Usage:</strong> ${session.usageStats.hourlyCount}/${session.usageStats.hourlyLimit} messages/hour
+            ${session.usageStats.onBreak ? ' | <span class="text-warning"><i class="fas fa-coffee me-1"></i>On break</span>' : ''}
+          </small>
+        </div>
+      ` : ''}
+
+      ${!session.status.isLoggedIn && session.status.status === 'QR_RECEIVED' ? `
+        <div id="qr-${session.sessionId}" class="qr-container">
+          <p class="text-muted">Loading QR code...</p>
+        </div>
+      ` : ''}
+    `;
+
+    sessionCard.innerHTML = cardContent;
+    container.appendChild(sessionCard);
+
+    if (qrCodes.has(session.sessionId) && session.status.status === 'QR_RECEIVED') {
+      setTimeout(() => {
+        updateSessionQR(session.sessionId, qrCodes.get(session.sessionId));
+      }, 100);
+    }
+  });
+}
+
+// Update QR code for a session
+function updateSessionQR(sessionId, qrData) {
+  const qrContainer = document.getElementById(`qr-${sessionId}`);
+  if (!qrContainer) return;
+
+  try {
+    qrContainer.innerHTML = '';
+
+    const qrDiv = document.createElement('div');
+    qrDiv.id = `qrcode-display-${sessionId}`;
+    qrDiv.style.display = 'inline-block';
+    qrDiv.style.padding = '20px';
+    qrDiv.style.background = 'white';
+    qrDiv.style.borderRadius = '8px';
+    qrDiv.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
+
+    qrContainer.appendChild(qrDiv);
+
+    if (typeof QRCode !== 'undefined') {
+      new QRCode(qrDiv, {
+        text: qrData,
+        width: 256,
+        height: 256,
+        colorDark: "#000000",
+        colorLight: "#ffffff",
+        correctLevel: QRCode.CorrectLevel.M
+      });
+
+      const instructions = document.createElement('div');
+      instructions.className = 'mt-3 text-center';
+      instructions.innerHTML = `
+        <p class="text-muted mb-2"><i class="fas fa-qrcode me-2"></i>Scan this QR with WhatsApp</p>
+        <small class="text-muted">Open WhatsApp → Settings → Linked Devices → Link a Device</small>
+      `;
+      qrContainer.appendChild(instructions);
+    }
+  } catch (error) {
+    console.error('Error generating QR code:', error);
+    qrContainer.innerHTML = `<div class="alert alert-danger">QR Generation Error</div>`;
+  }
+}
+
+// Toggle feature for a session
+async function toggleFeature(sessionId, featureName) {
+  console.log(`\n========== TOGGLE FEATURE DEBUG ==========`);
+  console.log(`📤 toggleFeature called with sessionId: "${sessionId}", featureName: "${featureName}"`);
+
+  const session = allSessions.find(s => s.sessionId === sessionId);
+  if (!session) {
+    console.log(`❌ Session not found in allSessions!`);
+    console.log(`📋 Available sessions:`, allSessions.map(s => s.sessionId));
+    return;
+  }
+
+  const currentValue = session.assignments && session.assignments[featureName];
+  const newValue = !currentValue;
+  console.log(`📊 Current value: ${currentValue}, New value: ${newValue}`);
+
+  const requestBody = { [featureName]: newValue };
+  console.log(`📤 Request body:`, JSON.stringify(requestBody));
+  console.log(`📤 URL: /session/${sessionId}/assignments`);
+
+  try {
+    const res = await fetch(`/session/${sessionId}/assignments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody)
+    });
+
+    console.log(`📥 Response status: ${res.status}`);
+    const data = await res.json();
+    console.log(`📥 Response data:`, JSON.stringify(data));
+
+    if (data.status === 'success') {
+      showToast(`${featureName.replace('_', ' ')} ${newValue ? 'enabled' : 'disabled'}`, 'success');
+      // Refresh sessions
+      console.log(`🔄 Refreshing sessions...`);
+      const res2 = await fetch('/sessions');
+      const data2 = await res2.json();
+      console.log(`📥 Refreshed sessions:`, JSON.stringify(data2.sessions.map(s => ({
+        id: s.sessionId,
+        ai: s.assignments?.ai_mode_enabled,
+        ot: s.assignments?.ot_message_enabled
+      }))));
+      allSessions = data2.sessions;
+      renderSessions();
+      updateStats();
+    } else {
+      console.log(`❌ Server returned non-success status:`, data);
+      showToast('Failed to update feature', 'danger');
+    }
+  } catch (error) {
+    console.error(`❌ Error:`, error);
+    showToast('Error updating feature', 'danger');
+  }
+  console.log(`========== END TOGGLE FEATURE ==========\n`);
+}
+
+// Add new session
+async function addNewSession() {
+  try {
+    showToast('Creating new session...', 'info');
+
+    const res = await fetch('/start-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const data = await res.json();
+
+    if (data.status === 'initialized') {
+      showToast(`Session ${data.sessionId} initialized! Waiting for QR code...`, 'success');
+    } else {
+      showToast('Failed to create session', 'danger');
+    }
+  } catch (error) {
+    showToast('Error creating session', 'danger');
+    console.error(error);
+  }
+}
+
+// Logout session
+async function logoutSession(sessionId) {
+  if (!confirm('Are you sure you want to logout this session?')) return;
+
+  try {
+    const res = await fetch(`/logout-session/${sessionId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    const data = await res.json();
+    showToast('Session logged out successfully', 'success');
+  } catch (error) {
+    showToast('Error during logout', 'danger');
+    console.error(error);
+  }
+}
+
+// Send message
+async function sendMessage() {
+  const phone = document.getElementById('phoneNumber').value.trim();
+  const message = document.getElementById('messageText').value.trim();
+  const flag = document.getElementById('messageFlag').value;
+
+  if (!phone || !message) {
+    showToast('Please enter phone number and message', 'warning');
+    return;
+  }
+
+  if (!flag) {
+    showToast('Please select a message type (flag)', 'warning');
+    return;
+  }
+
+  // Check if any session has this flag enabled AND is connected
+  const connectedSessions = allSessions.filter(s => s.status.isLoggedIn);
+  const sessionsWithFlag = allSessions.filter(s => {
+    const assignments = s.assignments || s.dbData || {};
+    return assignments[flag + '_enabled'];
+  });
+  const connectedWithFlag = connectedSessions.filter(s => {
+    const assignments = s.assignments || s.dbData || {};
+    return assignments[flag + '_enabled'];
+  });
+
+  if (connectedSessions.length === 0) {
+    showToast('No sessions are connected. Please connect at least one WhatsApp session first.', 'warning');
+    return;
+  }
+
+  if (sessionsWithFlag.length === 0) {
+    showToast(`No sessions have "${flag.replace(/_/g, ' ')}" enabled. Please enable it for at least one session first.`, 'warning');
+    return;
+  }
+
+  if (connectedWithFlag.length === 0) {
+    showToast(`The "${flag.replace(/_/g, ' ')}" flag is enabled but those sessions are not connected yet. Please wait for session to connect.`, 'warning');
+    return;
+  }
+
+  try {
+    showToast('Sending message...', 'info');
+
+    const res = await fetch('/send-flag-message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ flag, phone, message })
+    });
+
+    const data = await res.json();
+
+    if (data.status === 'completed') {
+      const successResults = data.results.filter(r => r.status === 'fulfilled');
+      if (successResults.length > 0) {
+        showToast(`Message sent successfully via ${data.flag}!`, 'success');
+        document.getElementById('phoneNumber').value = '';
+        document.getElementById('messageText').value = '';
+      } else {
+        showToast('Failed to send message', 'danger');
+      }
+    } else if (data.status === 'error') {
+      showToast(data.message || 'Failed to send message', 'danger');
+    } else {
+      showToast('Failed to send message', 'danger');
+    }
+  } catch (error) {
+    showToast('Error sending message', 'danger');
+    console.error(error);
+  }
+}
+
+// Test database connection
+async function testDatabaseConnection() {
+  try {
+    showToast('Testing database connection...', 'info');
+
+    const res = await fetch('/db/test');
+    const data = await res.json();
+
+    const resultDiv = document.getElementById('dbTestResult');
+    if (data.connected) {
+      resultDiv.innerHTML = `
+        <div class="alert alert-success mt-3">
+          <i class="fas fa-check-circle me-2"></i>
+          <strong>Database Connected!</strong>
+          <p class="mb-0">${data.message}</p>
+        </div>
+      `;
+      showToast('Database connected successfully', 'success');
+    } else {
+      resultDiv.innerHTML = `
+        <div class="alert alert-danger mt-3">
+          <i class="fas fa-times-circle me-2"></i>
+          <strong>Connection Failed</strong>
+          <p class="mb-0">${data.message}</p>
+        </div>
+      `;
+      showToast('Database connection failed', 'danger');
+    }
+  } catch (error) {
+    showToast('Error testing database', 'danger');
+    console.error(error);
+  }
+}
+
+// Get sample orders
+async function getSampleOrders() {
+  try {
+    showToast('Fetching sample orders...', 'info');
+
+    const res = await fetch('/db/sample?limit=5');
+    const data = await res.json();
+
+    const resultDiv = document.getElementById('dbTestResult');
+    if (data.status === 'success' && data.samples.length > 0) {
+      let tableHTML = `
+        <div class="alert alert-success mt-3">
+          <i class="fas fa-check-circle me-2"></i>
+          <strong>Found ${data.count} sample orders</strong>
+        </div>
+        <table class="table table-striped mt-3">
+          <thead>
+            <tr>
+              <th>Order Number</th>
+              <th>Material Status</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      data.samples.forEach(order => {
+        tableHTML += `
+          <tr>
+            <td><code>${order.order_number}</code></td>
+            <td>${order.material_status || 'N/A'}</td>
+          </tr>
+        `;
+      });
+
+      tableHTML += `</tbody></table>`;
+      resultDiv.innerHTML = tableHTML;
+      showToast('Sample orders loaded', 'success');
+    } else {
+      resultDiv.innerHTML = `
+        <div class="alert alert-warning mt-3">
+          <i class="fas fa-exclamation-triangle me-2"></i>
+          No sample data found
+        </div>
+      `;
+    }
+  } catch (error) {
+    showToast('Error fetching sample orders', 'danger');
+    console.error(error);
+  }
+}
+
+// Refresh AI stats
+async function refreshAIStats() {
+  try {
+    const res = await fetch('/ai/stats');
+    const data = await res.json();
+
+    const container = document.getElementById('aiStatsContent');
+    if (data.status === 'success') {
+      container.innerHTML = `
+        <div class="row">
+          <div class="col-md-6">
+            <div class="card mb-3">
+              <div class="card-body">
+                <h5><i class="fas fa-users me-2"></i>Total Users</h5>
+                <h2>${data.stats.totalUsers}</h2>
+                <p class="text-muted mb-0">Users with conversation history</p>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="card mb-3">
+              <div class="card-body">
+                <h5><i class="fas fa-comments me-2"></i>Active Conversations</h5>
+                <h2>${data.stats.totalUsers}</h2>
+                <p class="text-muted mb-0">Ongoing AI conversations</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        ${data.stats.users && data.stats.users.length > 0 ? `
+          <h5 class="mt-4 mb-3">Recent Conversations</h5>
+          <div class="table-responsive">
+            <table class="table table-striped">
+              <thead>
+                <tr>
+                  <th>Phone Number</th>
+                  <th>Messages</th>
+                  <th>Last Message</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${data.stats.users.slice(0, 10).map(user => `
+                  <tr>
+                    <td><code>${user.phone}</code></td>
+                    <td><span class="badge bg-primary">${user.messageCount}</span></td>
+                    <td><small>${user.lastMessageAt ? new Date(user.lastMessageAt).toLocaleString() : 'N/A'}</small></td>
+                    <td>
+                      <button onclick="clearUserHistory('${user.phone}')" class="btn btn-sm btn-outline-danger">
+                        <i class="fas fa-trash"></i> Clear
+                      </button>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        ` : '<div class="alert alert-info"><i class="fas fa-info-circle me-2"></i>No AI conversations yet</div>'}
+      `;
+    }
+  } catch (error) {
+    console.error('Error fetching AI stats:', error);
+  }
+}
+
+// Clear user AI history
+async function clearUserHistory(phone) {
+  if (!confirm(`Clear conversation history for ${phone}?`)) return;
+
+  try {
+    const res = await fetch(`/ai/clear-history/${phone}`, { method: 'POST' });
+    const data = await res.json();
+
+    if (data.status === 'success') {
+      showToast('Conversation history cleared', 'success');
+      refreshAIStats();
+    }
+  } catch (error) {
+    showToast('Error clearing history', 'danger');
+  }
+}
+
+// Helper functions
+function showToast(message, type) {
+  const toastContainer = document.querySelector('.toast-container');
+  const toast = document.createElement('div');
+
+  const toastId = 'toast-' + Date.now();
+  toast.id = toastId;
+  toast.className = 'toast show';
+
+  const bgColor = type === 'success' ? '#d1e7dd' :
+                 type === 'danger' ? '#f8d7da' :
+                 type === 'warning' ? '#fff3cd' : '#cfe2ff';
+
+  const iconClass = type === 'success' ? 'fa-check-circle' :
+                   type === 'danger' ? 'fa-exclamation-circle' :
+                   type === 'warning' ? 'fa-exclamation-triangle' : 'fa-info-circle';
+
+  toast.style.borderLeft = `4px solid ${bgColor}`;
+
+  toast.innerHTML = `
+    <div class="toast-header" style="background-color: ${bgColor};">
+      <i class="fas ${iconClass} me-2"></i>
+      <strong class="me-auto">Notification</strong>
+      <button type="button" class="btn-close" onClick="dismissToast('${toastId}')"></button>
+    </div>
+    <div class="toast-body">${message}</div>
+  `;
+
+  toastContainer.appendChild(toast);
+
+  setTimeout(() => {
+    dismissToast(toastId);
+  }, 5000);
+}
+
+function dismissToast(toastId) {
+  const toast = document.getElementById(toastId);
+  if (toast) {
+    toast.classList.remove('show');
+    setTimeout(() => {
+      toast.remove();
+    }, 300);
+  }
+}
+
+// Initialize
+async function initialize() {
+  try {
+    const res = await fetch('/sessions');
+    const data = await res.json();
+    allSessions = data.sessions;
+    updateStats();
+    renderSessions();
+
+    // Test database connection on load
+    testDatabaseConnection();
+
+    // Refresh AI stats when tab is clicked
+    document.getElementById('ai-tab').addEventListener('shown.bs.tab', () => {
+      refreshAIStats();
+    });
+
+    const connectedCount = allSessions.filter(s => s.status.isLoggedIn).length;
+    if (connectedCount > 0) {
+      showToast(`${connectedCount} session(s) ready!`, 'success');
+    }
+  } catch (error) {
+    console.error('Error loading sessions:', error);
+    showToast('Error connecting to server', 'danger');
+  }
+}
+
+initialize();
+  </script>
+</body>
+</html>
