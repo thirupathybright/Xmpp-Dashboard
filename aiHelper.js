@@ -143,6 +143,18 @@ How can I help you today?`;
     // Pass marketing persons array to filter results
     const sqlResult = await SQLAgent.queryFromNaturalLanguage(userMessage, AI_CONFIG, marketingPersons.length > 0 ? marketingPersons : null);
 
+    // Handle pre-built direct replies (e.g. black bar / bright bar totals)
+    if (sqlResult.success && sqlResult._directReply) {
+      const directText = sqlResult._directReply.trim();
+      console.log(`📤 Sending pre-built direct reply`);
+      history.push({ role: 'user',      content: userMessage });
+      history.push({ role: 'assistant', content: directText });
+      if (history.length > MAX_HISTORY_PER_USER) {
+        history.splice(0, history.length - MAX_HISTORY_PER_USER);
+      }
+      return directText;
+    }
+
     if (sqlResult.success && sqlResult.count > 0) {
       // Data found - format it
       contextMessage = SQLAgent.formatResultForAI(sqlResult);

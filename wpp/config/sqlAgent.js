@@ -169,6 +169,93 @@ class SQLAgent {
       const filterLog = hasFilter ? ` [Marketing Persons: ${mpArray.join(', ')}]` : '';
       console.log(`🤖 Processing natural language query: "${userQuestion}"${filterLog}`);
 
+      // ── Bar type / grand total stock fast-path ──
+      const hasBlackBar  = /black\s*bar/i.test(userQuestion);
+      const hasBrightBar = /bright\s*bar/i.test(userQuestion);
+      const hasBoth      = hasBlackBar && hasBrightBar;
+      // "total stock", "all stock", "grand total" without bar type = grand total
+      const isGrandTotal = !hasBlackBar && !hasBrightBar &&
+        /\b(total|grand|all)\b.*\bstock\b|\bstock\b.*\b(total|grand|all)\b/i.test(userQuestion);
+
+      if (hasBlackBar || hasBrightBar || isGrandTotal) {
+        const sumQty = rows => rows.reduce((acc, r) => acc + parseFloat(r.closing_qty || 0), 0);
+
+        // Helper: fetch totals for one bar flag across all 3 tables
+        const fetchBarTotals = async (barFlag) => {
+          const [regRes, rejRes, quarRes] = await Promise.all([
+            this.executeQuery(
+              `SELECT COALESCE(s.closing_qty, 0) AS closing_qty FROM thirupathybright.Database_stockregister s LEFT JOIN thirupathybright.Database_sku sk ON s.sku_id = sk.id WHERE sk.is_blackbar = ?`,
+              [barFlag]
+            ),
+            this.executeQuery(
+              `SELECT COALESCE(r.closing_qty, 0) AS closing_qty FROM thirupathybright.Database_rejectedstock r LEFT JOIN thirupathybright.Database_sku sk ON r.sku_id = sk.id WHERE sk.is_blackbar = ?`,
+              [barFlag]
+            ),
+            this.executeQuery(
+              `SELECT COALESCE(q.closing_qty, 0) AS closing_qty FROM thirupathybright.Database_quarantinestock q LEFT JOIN thirupathybright.Database_sku sk ON q.sku_id = sk.id WHERE sk.is_blackbar = ?`,
+              [barFlag]
+            )
+          ]);
+          return {
+            reg:  sumQty(regRes.rows),
+            rej:  sumQty(rejRes.rows),
+            quar: sumQty(quarRes.rows)
+          };
+        };
+
+        let out = '';
+
+        if (isGrandTotal || hasBoth) {
+          // Fetch both bar types in parallel
+          console.log(`⚡ Grand total (Black Bar + Bright Bar) stock fast-path`);
+          const [black, bright] = await Promise.all([fetchBarTotals(1), fetchBarTotals(0)]);
+
+          const blackTotal  = black.reg  + black.rej  + black.quar;
+          const brightTotal = bright.reg + bright.rej + bright.quar;
+          const grandTotal  = blackTotal + brightTotal;
+
+          out  = `Total Stock Summary:\n`;
+          out += '─'.repeat(30) + '\n\n';
+          out += `Black Bar:\n`;
+          out += `  Regular Stock    : ${black.reg.toLocaleString()}\n`;
+          out += `  Rejected Stock   : ${black.rej.toLocaleString()}\n`;
+          out += `  Quarantine Stock : ${black.quar.toLocaleString()}\n`;
+          out += `  Sub-Total        : ${blackTotal.toLocaleString()}\n\n`;
+          out += `Bright Bar:\n`;
+          out += `  Regular Stock    : ${bright.reg.toLocaleString()}\n`;
+          out += `  Rejected Stock   : ${bright.rej.toLocaleString()}\n`;
+          out += `  Quarantine Stock : ${bright.quar.toLocaleString()}\n`;
+          out += `  Sub-Total        : ${brightTotal.toLocaleString()}\n\n`;
+          out += '─'.repeat(30) + '\n';
+          out += `Grand Total        : ${grandTotal.toLocaleString()}\n`;
+
+        } else {
+          // Single bar type
+          const barFlag = hasBlackBar ? 1 : 0;
+          const barLabel = hasBlackBar ? 'Black Bar' : 'Bright Bar';
+          console.log(`⚡ ${barLabel} total stock fast-path`);
+          const t = await fetchBarTotals(barFlag);
+          const total = t.reg + t.rej + t.quar;
+
+          out  = `${barLabel} Stock Summary:\n`;
+          out += '─'.repeat(30) + '\n\n';
+          out += `Regular Stock    : ${t.reg.toLocaleString()}\n`;
+          out += `Rejected Stock   : ${t.rej.toLocaleString()}\n`;
+          out += `Quarantine Stock : ${t.quar.toLocaleString()}\n`;
+          out += '─'.repeat(30) + '\n';
+          out += `Total Stock      : ${total.toLocaleString()}\n`;
+        }
+
+        return {
+          success: true,
+          query: 'bartype-stock',
+          data: [],
+          count: 0,
+          error: null,
+          _directReply: out
+        };
+      }
+
       // ── Stock query fast-path ──
       // Strip "stock" from start or end, then check if the remainder is a SKU-like code.
       // A SKU looks like: EN1A-Black-COIL-10  (letters/digits separated by dashes, no common words).
@@ -469,7 +556,7 @@ COMMON QUERIES:
       return null;
     };
 
-    const closingQtyKeys = ['closing_qty', 'closing_stock', 'closingqty', 'closingstock', 'closing_quantity'];
+    const closingQtyKeys = ['closing_qty'];
     const isStockResult = result._isStockQuery || (data[0] && closingQtyKeys.some(k => data[0][k] !== undefined));
 
     if (isStockResult) {
