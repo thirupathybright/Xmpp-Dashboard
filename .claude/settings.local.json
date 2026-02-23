@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmd.exe /c \"node -e \"\"const mysql=require\\(''mysql2/promise''\\);const D=require\\(''C:/Users/Niraj/Documents/GitHub/Xmpp-Dashboard/wpp/config/sqlAuthenticator''\\);const c=D[''default''];mysql.createPool\\({host:c.HOST,port:c.PORT,user:c.USER,password:c.PASSWORD,database:c.NAME}\\).execute\\(''DESCRIBE thirupathybright.Database_stockregister''\\).then\\(\\([r]\\)=>{console.log\\(JSON.stringify\\(r.map\\(x=>x.Field\\)\\)\\);process.exit\\(0\\)}\\).catch\\(e=>{console.error\\(e.message\\);process.exit\\(1\\)}\\)\"\"\")",
+      "Bash(powershell.exe -Command:*)"
+    ]
+  }
+}

@@ -39,7 +39,11 @@ class SQLAgent {
         'mastercustomer',
         'Database_despatch',
         'Database_weightment',
-        'Database_despatchinvoice'
+        'Database_despatchinvoice',
+        'Database_sku',
+        'Database_stockregister',
+        'Database_rejectedstock',
+        'Database_quarantinestock'
       ];
 
       for (const tableName of tables) {
@@ -65,10 +69,17 @@ class SQLAgent {
   // Execute SQL query with safety checks
   static async executeQuery(sql, params = []) {
     try {
-      // Safety check - only allow SELECT queries
+      // Safety check - only allow SELECT queries; block any write/DDL keywords
       const normalizedSQL = sql.trim().toUpperCase();
       if (!normalizedSQL.startsWith('SELECT')) {
         throw new Error('Only SELECT queries are allowed');
+      }
+      const forbiddenKeywords = ['INSERT', 'UPDATE', 'DELETE', 'DROP', 'CREATE', 'ALTER', 'TRUNCATE', 'REPLACE', 'MERGE', 'CALL', 'EXEC', 'GRANT', 'REVOKE'];
+      for (const kw of forbiddenKeywords) {
+        const re = new RegExp(`\\b${kw}\\b`);
+        if (re.test(normalizedSQL)) {
+          throw new Error(`Query contains forbidden keyword: ${kw}`);
+        }
       }
 
       console.log(`🔍 Executing SQL: ${sql}`);
@@ -125,6 +136,7 @@ class SQLAgent {
       'my', 'our', 'their', 'today', 'yesterday', 'week', 'month', 'year',
       'customer', 'customers', 'marketing', 'person', 'how', 'many',
       'which', 'where', 'when', 'who', 'why', 'please', 'tell', 'about',
+      'stock', 'sku', 'inventory', 'closing', 'opening', 'inward', 'outward',
     ]);
 
     const words = question.trim().split(/\s+/);
@@ -156,6 +168,61 @@ class SQLAgent {
       const hasFilter = mpArray.length > 0;
       const filterLog = hasFilter ? ` [Marketing Persons: ${mpArray.join(', ')}]` : '';
       console.log(`🤖 Processing natural language query: "${userQuestion}"${filterLog}`);
+
+      // ── Stock query fast-path ──
+      // Strip "stock" from start or end, then check if the remainder is a SKU-like code.
+      // A SKU looks like: EN1A-Black-COIL-10  (letters/digits separated by dashes, no common words).
+      // Natural language sentences like "What is the stock" must NOT trigger this path.
+      const naturalLanguageWords = new Set([
+        'what', 'whats', 'how', 'show', 'list', 'give', 'get', 'find', 'fetch',
+        'tell', 'is', 'are', 'the', 'a', 'an', 'of', 'for', 'in', 'all', 'me',
+        'check', 'any', 'current', 'available', 'total', 'remaining'
+      ]);
+      const stripped = userQuestion.trim().replace(/^stock\s+/i, '').replace(/\s+stock$/i, '').trim();
+      const hadStockWord = stripped.length < userQuestion.trim().length;
+      // Only treat as SKU fast-path if stripped text has no natural-language words
+      const strippedWords = stripped.toLowerCase().split(/\s+/);
+      const hasNaturalWords = strippedWords.some(w => naturalLanguageWords.has(w));
+      const looksLikeSku = !hasNaturalWords && /^[a-zA-Z0-9]+([-\s][a-zA-Z0-9.]+){1,8}$/.test(stripped);
+
+      if ((hadStockWord && !hasNaturalWords) || looksLikeSku) {
+        const skuKeyword = stripped;
+        console.log(`⚡ Stock fast-path for SKU keyword: "${skuKeyword}"`);
+
+        // Query all three stock tables in parallel
+        const likeParam = [`%${skuKeyword}%`];
+        const [regRes, rejRes, quarRes] = await Promise.all([
+          this.executeQuery(
+            `SELECT s.*, sk.skuname FROM thirupathybright.Database_stockregister s LEFT JOIN thirupathybright.Database_sku sk ON s.sku_id = sk.id WHERE LOWER(sk.skuname) LIKE LOWER(?) LIMIT 50`,
+            likeParam
+          ),
+          this.executeQuery(
+            `SELECT r.*, sk.skuname FROM thirupathybright.Database_rejectedstock r LEFT JOIN thirupathybright.Database_sku sk ON r.sku_id = sk.id WHERE LOWER(sk.skuname) LIKE LOWER(?) LIMIT 50`,
+            likeParam
+          ),
+          this.executeQuery(
+            `SELECT q.*, sk.skuname FROM thirupathybright.Database_quarantinestock q LEFT JOIN thirupathybright.Database_sku sk ON q.sku_id = sk.id WHERE LOWER(sk.skuname) LIKE LOWER(?) LIMIT 50`,
+            likeParam
+          )
+        ]);
+
+        // Tag each row with its source so the formatter can separate them
+        const tag = (rows, source) => rows.map(r => ({ ...r, _stockSource: source }));
+        const combined = [
+          ...tag(regRes.rows,  'regular'),
+          ...tag(rejRes.rows,  'rejected'),
+          ...tag(quarRes.rows, 'quarantine')
+        ];
+
+        return {
+          success: true,
+          query: 'combined-stock',
+          data: combined,
+          count: combined.length,
+          error: null,
+          _isStockQuery: true
+        };
+      }
 
       // Get database schema
       const schema = await this.getDatabaseSchema();
@@ -223,7 +290,7 @@ IMPORTANT RULES:
    - Number of dispatches completed
 7. Field name mappings:
    - Database_despatch has 'despatchno' (no underscore) - NOTE: Capital 'D'
-   - database_weightment has 'despatch_no' (with underscore)
+   - Database_weightment has 'despatch_no' (with underscore)
    - Database_despatchinvoice has 'despatch_no' (with underscore) - NOTE: Capital 'D'
 8. For order status queries, include:
    - ALL order fields (order_number, po_number, po_date, quantity_kg, rate, material, payment_terms, etc.)
@@ -234,7 +301,16 @@ IMPORTANT RULES:
 9. Use LIMIT to prevent large result sets (max 50 rows)
 10. CUSTOMER NAME FILTERING: If a customer_id IN filter is provided above, use that. Otherwise if the
     question mentions a company name, use: c.customer_name LIKE '%KEYWORD%' (case-insensitive).
-11. STATUS RULE - CRITICAL:
+11. STOCK QUERIES - when the user asks about stock, inventory, closing stock, or SKU:
+    - For SKU list: SELECT * FROM thirupathybright.Database_sku LIMIT 50
+    - For regular stock: JOIN Database_stockregister with Database_sku on sku_id
+    - For rejected stock: JOIN Database_rejectedstock with Database_sku on sku_id
+    - For quarantine stock: JOIN Database_quarantinestock with Database_sku on sku_id
+    - When filtering by SKU name/code, always use LIKE (case-insensitive): LOWER(sk.skuname) LIKE LOWER('%keyword%')
+    - The closing quantity column may be named closing_qty or closing_stock — use whichever exists per the schema above
+    - Do NOT apply marketing_person filter to stock/SKU tables (they are not order tables)
+    - Do NOT apply customer_id filter to stock/SKU tables (they are not order tables)
+12. STATUS RULE - CRITICAL:
     - "pending" or "pending orders" means NOT completed and NOT cancelled.
       Use: o.status IN ('pending', 'in_progress')
     - "in progress" or "in_progress" means ONLY: o.status = 'in_progress'
@@ -338,19 +414,30 @@ Return ONLY valid SQL query, nothing else. No explanations, no markdown, just SQ
 - Database_orderregister.id -> Database_despatch.order_no_id
 - Database_despatch.despatchno -> Database_weightment.despatch_no
 - Database_despatch.despatchno -> Database_despatchinvoice.despatch_no
+- Database_stockregister.sku_id -> Database_sku.id
+- Database_rejectedstock.sku_id -> Database_sku.id
+- Database_quarantinestock.sku_id -> Database_sku.id
 
 IMPORTANT: Use correct table name capitalization:
 - Database_despatch (capital D)
 - Database_despatchinvoice (capital D)
-- Database_orderregister (lowercase d)
-- Database_weightment (lowercase d)
+- Database_orderregister (capital D)
+- Database_weightment (capital D)
 - mastercustomer (lowercase m)
+- Database_sku (capital D)
+- Database_stockregister (capital D)
+- Database_rejectedstock (capital D)
+- Database_quarantinestock (capital D)
 
 COMMON QUERIES:
 - Order by number: SELECT from Database_orderregister WHERE order_number = ?
 - Customer orders: JOIN Database_orderregister with mastercustomer
 - Dispatch details: JOIN Database_despatch with Database_weightment and Database_despatchinvoice
 - Order status: pending, in_progress, completed
+- SKU list: SELECT from thirupathybright.Database_sku
+- Regular stock: JOIN Database_stockregister with Database_sku on sku_id (closing_qty or closing_stock column)
+- Rejected stock: JOIN Database_rejectedstock with Database_sku on sku_id
+- Quarantine stock: JOIN Database_quarantinestock with Database_sku on sku_id
 `;
 
     return description;
@@ -372,6 +459,59 @@ COMMON QUERIES:
     }
 
     const data = result.data;
+
+    // ── Stock register (closing stock) results — checked FIRST before single-record branch ──
+    // Helper: pick first defined non-null value from a list of column name variants
+    const pick = (r, ...keys) => {
+      for (const k of keys) {
+        if (r[k] !== undefined && r[k] !== null) return r[k];
+      }
+      return null;
+    };
+
+    const closingQtyKeys = ['closing_qty', 'closing_stock', 'closingqty', 'closingstock', 'closing_quantity'];
+    const isStockResult = result._isStockQuery || (data[0] && closingQtyKeys.some(k => data[0][k] !== undefined));
+
+    if (isStockResult) {
+      // Separate rows by source (tagged by fast-path) or treat all as regular
+      const regular    = data.filter(r => !r._stockSource || r._stockSource === 'regular');
+      const rejected   = data.filter(r => r._stockSource === 'rejected');
+      const quarantine = data.filter(r => r._stockSource === 'quarantine');
+
+      const formatSection = (rows, label) => {
+        if (rows.length === 0) return '';
+        let sec = `${label}:\n`;
+        rows.forEach((r, i) => {
+          const skuLabel = r.skuname || r.sku_code || r.sku_name || r.name || r.sku_id || r.id || `Item ${i + 1}`;
+          sec += `  ${i + 1}. ${skuLabel}\n`;
+          if (r.unit)        sec += `     Unit        : ${r.unit}\n`;
+          const closingVal = pick(r, ...closingQtyKeys);
+          if (closingVal != null) sec += `     Closing Qty : ${Number(closingVal).toLocaleString()}\n`;
+          if (r.date)        sec += `     Date        : ${r.date}\n`;
+          sec += '\n';
+        });
+        return sec;
+      };
+
+      const hasAny = regular.length > 0 || rejected.length > 0 || quarantine.length > 0;
+      if (!hasAny) return 'No data found for your query.';
+
+      // Use first row for SKU name in header
+      const firstRow = data[0];
+      const skuHeader = firstRow.skuname || firstRow.sku_code || firstRow.sku_name || firstRow.name || '';
+      let out = skuHeader ? `Stock for: ${skuHeader}\n` : `Stock Summary:\n`;
+      out += '─'.repeat(30) + '\n\n';
+
+      out += formatSection(regular,    'Regular Stock');
+      out += formatSection(rejected,   'Rejected Stock');
+      out += formatSection(quarantine, 'Quarantine Stock');
+
+      if (regular.length === 0 && (rejected.length > 0 || quarantine.length > 0)) {
+        out += `Regular Stock : No data\n\n`;
+      }
+
+      return `\n\n[DIRECT_REPLY:\n${out}]`;
+    }
 
     // ── Single record: let AI present it with its conversational touch ──
     if (result.count === 1) {
@@ -441,6 +581,29 @@ COMMON QUERIES:
       out += `  Total Remaining : ${totalRemaining.toLocaleString()} kg\n`;
 
       // Return as DIRECT_REPLY so server.js sends it without AI reprocessing
+      return `\n\n[DIRECT_REPLY:\n${out}]`;
+    }
+
+    // ── SKU list results (no closing qty column — pure SKU master data) ──
+    const isSkuList = limited[0] && (limited[0].sku_code !== undefined || limited[0].sku_name !== undefined || limited[0].skuname !== undefined) && !closingQtyKeys.some(k => limited[0][k] !== undefined);
+
+    if (isSkuList) {
+      let out = `SKU List (${result.count} item(s)):\n`;
+      out += '─'.repeat(30) + '\n';
+
+      limited.forEach((r, i) => {
+        const skuLabel = r.skuname || r.sku_code || r.sku_name || r.name || r.id || `SKU ${i + 1}`;
+        out += `${i + 1}. ${skuLabel}\n`;
+        if (r.description) out += `   Description : ${r.description}\n`;
+        if (r.unit)        out += `   Unit        : ${r.unit}\n`;
+        if (r.category)    out += `   Category    : ${r.category}\n`;
+        out += '\n';
+      });
+
+      if (result.count > maxRecords) {
+        out += `(showing first ${maxRecords} of ${result.count} items)\n`;
+      }
+
       return `\n\n[DIRECT_REPLY:\n${out}]`;
     }
 
