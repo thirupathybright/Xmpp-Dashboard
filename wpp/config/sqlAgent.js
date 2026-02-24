@@ -43,7 +43,11 @@ class SQLAgent {
         'Database_sku',
         'Database_stockregister',
         'Database_rejectedstock',
-        'Database_quarantinestock'
+        'Database_quarantinestock',
+        'Database_grade',
+        'Database_condition',
+        'Database_shape',
+        'Database_size'
       ];
 
       for (const tableName of tables) {
@@ -376,8 +380,10 @@ IMPORTANT RULES:
 1. ONLY generate SELECT queries (no INSERT, UPDATE, DELETE)
 2. Always use fully qualified table names: thirupathybright.table_name
 3. Use JOINs when data from multiple tables is needed
-4. For order lookup: ALWAYS SELECT ALL FIELDS (o.*) from Database_orderregister and include customer name
+4. For order lookup: ALWAYS SELECT ALL FIELDS (o.*) from Database_orderregister and include customer name and SKU
 5. For customer info: JOIN with mastercustomer to get customer_name
+5a. For SKU: ALWAYS JOIN Database_grade, Database_condition, Database_shape, Database_size and build:
+    CONCAT(g.name, ' - ', cond.name, ' - ', sh.name, ' - ', sz.name) AS sku
 6. For dispatch tracking: Use subqueries or JOINs to calculate:
    - Total dispatched quantity: SUM of weightment_weight from Database_weightment
    - Remaining quantity: order quantity_kg - total dispatched
@@ -415,11 +421,16 @@ EXAMPLE for pending customer orders (includes in_progress):
 SELECT
   o.*,
   c.customer_name,
+  CONCAT(g.name, ' - ', cond.name, ' - ', sh.name, ' - ', sz.name) AS sku,
   COALESCE(SUM(w.weightment_weight), 0) as total_dispatched,
   (o.quantity_kg - COALESCE(SUM(w.weightment_weight), 0)) as remaining_qty,
   COUNT(DISTINCT d.despatchno) as dispatch_count
 FROM thirupathybright.Database_orderregister o
 LEFT JOIN thirupathybright.mastercustomer c ON o.customer_id = c.id
+LEFT JOIN thirupathybright.Database_grade g ON o.grade_id = g.id
+LEFT JOIN thirupathybright.Database_condition cond ON o.condition_id = cond.id
+LEFT JOIN thirupathybright.Database_shape sh ON o.shape_id = sh.id
+LEFT JOIN thirupathybright.Database_size sz ON o.size_id = sz.id
 LEFT JOIN thirupathybright.Database_despatch d ON d.order_no_id = o.id
 LEFT JOIN thirupathybright.Database_weightment w ON w.despatch_no = d.despatchno
 WHERE o.status IN ('pending', 'in_progress')
@@ -507,12 +518,19 @@ Return ONLY valid SQL query, nothing else. No explanations, no markdown, just SQ
     // Add relationship descriptions
     description += `\nTABLE RELATIONSHIPS:
 - Database_orderregister.customer_id -> mastercustomer.id
+- Database_orderregister.grade_id -> Database_grade.id
+- Database_orderregister.condition_id -> Database_condition.id
+- Database_orderregister.shape_id -> Database_shape.id
+- Database_orderregister.size_id -> Database_size.id
 - Database_orderregister.id -> Database_despatch.order_no_id
 - Database_despatch.despatchno -> Database_weightment.despatch_no
 - Database_despatch.despatchno -> Database_despatchinvoice.despatch_no
 - Database_stockregister.sku_id -> Database_sku.id
 - Database_rejectedstock.sku_id -> Database_sku.id
 - Database_quarantinestock.sku_id -> Database_sku.id
+
+SKU FORMAT: The SKU for an order is built as: CONCAT(g.name, ' - ', cond.name, ' - ', sh.name, ' - ', sz.name)
+where g = Database_grade, cond = Database_condition, sh = Database_shape, sz = Database_size
 
 IMPORTANT: Use correct table name capitalization:
 - Database_despatch (capital D)
@@ -524,6 +542,10 @@ IMPORTANT: Use correct table name capitalization:
 - Database_stockregister (capital D)
 - Database_rejectedstock (capital D)
 - Database_quarantinestock (capital D)
+- Database_grade (capital D)
+- Database_condition (capital D)
+- Database_shape (capital D)
+- Database_size (capital D)
 
 COMMON QUERIES:
 - Order by number: SELECT from Database_orderregister WHERE order_number = ?
@@ -614,7 +636,7 @@ COMMON QUERIES:
       const r = data[0];
       let context = `\n\n[SYSTEM: Found 1 record.\nDATA:\n`;
       const essentialFields = [
-        'order_number', 'status', 'customer_name', 'material_status',
+        'order_number', 'status', 'customer_name', 'sku', 'material_status',
         'po_number', 'po_date', 'expected_date', 'quantity_kg',
         'material', 'rate', 'payment_terms', 'delivery_address',
         'total_dispatched', 'remaining_qty', 'dispatch_count',
@@ -654,6 +676,7 @@ COMMON QUERIES:
         if (r.customer_name) out += ` | ${r.customer_name}`;
         out += '\n';
 
+        if (r.sku)            out += `   SKU      : ${r.sku}\n`;
         if (r.material)       out += `   Material : ${r.material}\n`;
         if (r.quantity_kg != null) out += `   Ordered  : ${Number(r.quantity_kg).toLocaleString()} kg\n`;
         if (r.total_dispatched != null) out += `   Dispatched: ${Number(r.total_dispatched).toLocaleString()} kg\n`;
@@ -697,7 +720,7 @@ COMMON QUERIES:
     // ── Fallback for non-order multi-record results ──
     let context = `\n\n[SYSTEM: Found ${result.count} record(s).\nDATA:\n`;
     const essentialFields = [
-      'order_number', 'status', 'customer_name', 'material_status',
+      'order_number', 'status', 'customer_name', 'sku', 'material_status',
       'po_number', 'po_date', 'expected_date', 'quantity_kg',
       'material', 'rate', 'payment_terms', 'delivery_address',
       'total_dispatched', 'remaining_qty', 'dispatch_count',
