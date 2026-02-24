@@ -263,7 +263,14 @@ class SQLAgent {
       const naturalLanguageWords = new Set([
         'what', 'whats', 'how', 'show', 'list', 'give', 'get', 'find', 'fetch',
         'tell', 'is', 'are', 'the', 'a', 'an', 'of', 'for', 'in', 'all', 'me',
-        'check', 'any', 'current', 'available', 'total', 'remaining'
+        'check', 'any', 'current', 'available', 'total', 'remaining',
+        // order-related words — prevent order queries from hitting stock fast-path
+        'order', 'orders', 'pending', 'completed', 'progress', 'inprogress',
+        'dispatch', 'dispatches', 'invoice', 'invoices', 'status', 'customer',
+        // company name words — "Poly Hose India Pvt Ltd" should NOT be a SKU
+        'pvt', 'ltd', 'private', 'limited', 'india', 'industries', 'company',
+        'corp', 'corporation', 'enterprises', 'solutions', 'services', 'group',
+        'hose', 'pipe', 'steel', 'metals', 'forging', 'casting', 'engineering',
       ]);
       const stripped = userQuestion.trim().replace(/^stock\s+/i, '').replace(/\s+stock$/i, '').trim();
       const hadStockWord = stripped.length < userQuestion.trim().length;
@@ -280,15 +287,15 @@ class SQLAgent {
         const likeParam = [`%${skuKeyword}%`];
         const [regRes, rejRes, quarRes] = await Promise.all([
           this.executeQuery(
-            `SELECT s.*, sk.skuname FROM thirupathybright.Database_stockregister s LEFT JOIN thirupathybright.Database_sku sk ON s.sku_id = sk.id WHERE LOWER(sk.skuname) LIKE LOWER(?) LIMIT 50`,
+            `SELECT s.*, sk.skuname FROM thirupathybright.Database_stockregister s LEFT JOIN thirupathybright.Database_sku sk ON s.sku_id = sk.id WHERE LOWER(sk.skuname) LIKE LOWER(?)`,
             likeParam
           ),
           this.executeQuery(
-            `SELECT r.*, sk.skuname FROM thirupathybright.Database_rejectedstock r LEFT JOIN thirupathybright.Database_sku sk ON r.sku_id = sk.id WHERE LOWER(sk.skuname) LIKE LOWER(?) LIMIT 50`,
+            `SELECT r.*, sk.skuname FROM thirupathybright.Database_rejectedstock r LEFT JOIN thirupathybright.Database_sku sk ON r.sku_id = sk.id WHERE LOWER(sk.skuname) LIKE LOWER(?)`,
             likeParam
           ),
           this.executeQuery(
-            `SELECT q.*, sk.skuname FROM thirupathybright.Database_quarantinestock q LEFT JOIN thirupathybright.Database_sku sk ON q.sku_id = sk.id WHERE LOWER(sk.skuname) LIKE LOWER(?) LIMIT 50`,
+            `SELECT q.*, sk.skuname FROM thirupathybright.Database_quarantinestock q LEFT JOIN thirupathybright.Database_sku sk ON q.sku_id = sk.id WHERE LOWER(sk.skuname) LIKE LOWER(?)`,
             likeParam
           )
         ]);
@@ -389,7 +396,7 @@ IMPORTANT RULES:
 10. CUSTOMER NAME FILTERING: If a customer_id IN filter is provided above, use that. Otherwise if the
     question mentions a company name, use: c.customer_name LIKE '%KEYWORD%' (case-insensitive).
 11. STOCK QUERIES - when the user asks about stock, inventory, closing stock, or SKU:
-    - For SKU list: SELECT * FROM thirupathybright.Database_sku LIMIT 50
+    - For SKU list: SELECT * FROM thirupathybright.Database_sku
     - For regular stock: JOIN Database_stockregister with Database_sku on sku_id
     - For rejected stock: JOIN Database_rejectedstock with Database_sku on sku_id
     - For quarantine stock: JOIN Database_quarantinestock with Database_sku on sku_id
@@ -418,7 +425,6 @@ LEFT JOIN thirupathybright.Database_weightment w ON w.despatch_no = d.despatchno
 WHERE o.status IN ('pending', 'in_progress')
   AND o.customer_id IN (1929)
 GROUP BY o.id
-LIMIT 50
 
 RESPONSE FORMAT:
 Return ONLY valid SQL query, nothing else. No explanations, no markdown, just SQL.`;
@@ -454,6 +460,9 @@ Return ONLY valid SQL query, nothing else. No explanations, no markdown, just SQ
 
       // Clean up the SQL query (remove markdown code blocks if present)
       sqlQuery = sqlQuery.replace(/```sql\n?/g, '').replace(/```\n?/g, '').trim();
+
+      // Strip any LIMIT clause the AI added — we always fetch all rows
+      sqlQuery = sqlQuery.replace(/\bLIMIT\s+\d+\b/gi, '').trim().replace(/;\s*$/, '');
 
       console.log(`📝 Generated SQL:\n${sqlQuery}`);
 
@@ -621,8 +630,7 @@ COMMON QUERIES:
     }
 
     // ── Multiple records: build plain-text reply directly, skip AI re-formatting ──
-    const maxRecords = Math.min(50, result.count);
-    const limited = data.slice(0, maxRecords);
+    const limited = data;
 
     // Check if this looks like an order list (has order_number field)
     const isOrderList = limited[0] && limited[0].order_number !== undefined;
@@ -657,10 +665,6 @@ COMMON QUERIES:
         out += '\n';
       });
 
-      if (result.count > maxRecords) {
-        out += `(showing first ${maxRecords} of ${result.count} orders)\n\n`;
-      }
-
       out += '─'.repeat(30) + '\n';
       out += `TOTALS:\n`;
       out += `  Total Ordered   : ${totalOrderQty.toLocaleString()} kg\n`;
@@ -687,10 +691,6 @@ COMMON QUERIES:
         out += '\n';
       });
 
-      if (result.count > maxRecords) {
-        out += `(showing first ${maxRecords} of ${result.count} items)\n`;
-      }
-
       return `\n\n[DIRECT_REPLY:\n${out}]`;
     }
 
@@ -712,9 +712,6 @@ COMMON QUERIES:
       }
       context += '\n';
     });
-    if (result.count > maxRecords) {
-      context += `... and ${result.count - maxRecords} more records (showing first ${maxRecords} only)\n`;
-    }
     context += `Present this data as plain text, no markdown, no emojis.]`;
     return context;
   }
