@@ -47,7 +47,8 @@ class SQLAgent {
         'Database_grade',
         'Database_condition',
         'Database_shape',
-        'Database_size'
+        'Database_size',
+        'Database_production'
       ];
 
       for (const tableName of tables) {
@@ -260,6 +261,107 @@ class SQLAgent {
         };
       }
 
+      // ── PP number fast-path (e.g. "Pp-2602-1595 production plan data") ──
+      // Matches PP-YYYY-NNNN or PP YYYY NNNN patterns and queries production by ppno.
+      const ppnoMatch = userQuestion.match(/\b(PP[-\s]\d{4}[-\s]\d+)\b/i);
+      if (ppnoMatch) {
+        // Normalise to "PP-2602-1595" form
+        const ppno = ppnoMatch[1].replace(/\s/g, '-').toUpperCase();
+        // Also build a LIKE pattern using just the numeric portion (handles any prefix casing/spacing)
+        const ppnoLike = `%${ppno.replace(/^PP[-\s]/i, '')}%`;
+        console.log(`⚡ PP number fast-path for ppno: "${ppno}"`);
+
+        const ppSQL = `
+SELECT
+  p.*,
+  c.customer_name,
+  CONCAT(g.name, ' - ', cond.name, ' - ', sh.name, ' - ', sz.name) AS sku
+FROM thirupathybright.Database_production p
+LEFT JOIN thirupathybright.mastercustomer c ON p.customer_id = c.id
+LEFT JOIN thirupathybright.Database_grade g ON p.grade_id = g.id
+LEFT JOIN thirupathybright.Database_condition cond ON p.condition_id = cond.id
+LEFT JOIN thirupathybright.Database_shape sh ON p.shape_id = sh.id
+LEFT JOIN thirupathybright.Database_size sz ON p.finish_metal_size_id = sz.id
+WHERE UPPER(p.ppno) = ? OR UPPER(p.ppno) LIKE ? OR UPPER(p.ppnoreference) = ? OR UPPER(p.ppnoreference) LIKE ?`.trim();
+
+        const ppResult = await this.executeQuery(ppSQL, [ppno, ppnoLike, ppno, ppnoLike]);
+
+        // If not found, return a clear direct reply instead of falling through to AI
+        if (!ppResult.success || ppResult.count === 0) {
+          return {
+            success: true,
+            query: ppSQL,
+            data: [],
+            count: 0,
+            error: null,
+            _directReply: `Production plan ${ppno} not found.\nPlease check the PP number and try again.`
+          };
+        }
+
+        return {
+          success: ppResult.success,
+          query: ppSQL,
+          data: ppResult.rows,
+          count: ppResult.count,
+          error: ppResult.error,
+          _isProductionQuery: true,
+          _statusContext: userQuestion,
+          _ppLookup: true   // exact PP lookup — show real status, not "Not Approved" bucket
+        };
+      }
+
+      // ── Production query fast-path ──
+      // Triggers when the question is about production (plan/pending/in_progress/completed/customer/sku)
+      // Must run BEFORE stock fast-path so "Pp-XXXX production pending" doesn't get grabbed as a SKU.
+      const isProductionQuery = /\bproduction\b/i.test(userQuestion);
+
+      if (isProductionQuery) {
+        console.log(`⚡ Production fast-path triggered`);
+
+        // Determine which statuses the user wants
+        const wantsCompleted  = /\bcompleted?\b/i.test(userQuestion);
+        const wantsCancelled  = /\bcancel(?:led)?\b/i.test(userQuestion);
+        let statusClause;
+        if (wantsCompleted)       statusClause = `p.status = 'completed'`;
+        else if (wantsCancelled)  statusClause = `p.status = 'cancelled'`;
+        else                      statusClause = `p.status IN ('pending', 'in_progress')`;
+
+        // Build customer filter if pre-resolved
+        let prodCustomerClause = '';
+        const prodCustomerMatch = await this.findCustomerInQuestion(userQuestion);
+        if (prodCustomerMatch) {
+          const idList = prodCustomerMatch.customers.map(c => c.id).join(', ');
+          prodCustomerClause = ` AND p.customer_id IN (${idList})`;
+          console.log(`✅ Production customer filter: IDs ${idList}`);
+        }
+
+        const prodSQL = `
+SELECT
+  p.*,
+  c.customer_name,
+  CONCAT(g.name, ' - ', cond.name, ' - ', sh.name, ' - ', sz.name) AS sku
+FROM thirupathybright.Database_production p
+LEFT JOIN thirupathybright.mastercustomer c ON p.customer_id = c.id
+LEFT JOIN thirupathybright.Database_grade g ON p.grade_id = g.id
+LEFT JOIN thirupathybright.Database_condition cond ON p.condition_id = cond.id
+LEFT JOIN thirupathybright.Database_shape sh ON p.shape_id = sh.id
+LEFT JOIN thirupathybright.Database_size sz ON p.finish_metal_size_id = sz.id
+WHERE ${statusClause}${prodCustomerClause}
+ORDER BY p.created_at DESC`.trim();
+
+        const prodResult = await this.executeQuery(prodSQL);
+
+        return {
+          success: prodResult.success,
+          query: prodSQL,
+          data: prodResult.rows,
+          count: prodResult.count,
+          error: prodResult.error,
+          _isProductionQuery: true,
+          _statusContext: userQuestion
+        };
+      }
+
       // ── Stock query fast-path ──
       // Strip "stock" from start or end, then check if the remainder is a SKU-like code.
       // A SKU looks like: EN1A-Black-COIL-10  (letters/digits separated by dashes, no common words).
@@ -271,6 +373,8 @@ class SQLAgent {
         // order-related words — prevent order queries from hitting stock fast-path
         'order', 'orders', 'pending', 'completed', 'progress', 'inprogress',
         'dispatch', 'dispatches', 'invoice', 'invoices', 'status', 'customer',
+        // production-related words — prevent production queries from hitting stock fast-path
+        'production', 'plan', 'data', 'number', 'pp',
         // company name words — "Poly Hose India Pvt Ltd" should NOT be a SKU
         'pvt', 'ltd', 'private', 'limited', 'india', 'industries', 'company',
         'corp', 'corporation', 'enterprises', 'solutions', 'services', 'group',
@@ -528,9 +632,23 @@ Return ONLY valid SQL query, nothing else. No explanations, no markdown, just SQ
 - Database_stockregister.sku_id -> Database_sku.id
 - Database_rejectedstock.sku_id -> Database_sku.id
 - Database_quarantinestock.sku_id -> Database_sku.id
+- Database_production.customer_id -> mastercustomer.id
+- Database_production.grade_id -> Database_grade.id
+- Database_production.condition_id -> Database_condition.id
+- Database_production.shape_id -> Database_shape.id
+- Database_production.finish_metal_size_id -> Database_size.id
 
-SKU FORMAT: The SKU for an order is built as: CONCAT(g.name, ' - ', cond.name, ' - ', sh.name, ' - ', sz.name)
+SKU FORMAT: The SKU for an order or production record is built as:
+  CONCAT(g.name, ' - ', cond.name, ' - ', sh.name, ' - ', sz.name)
 where g = Database_grade, cond = Database_condition, sh = Database_shape, sz = Database_size
+
+PRODUCTION STATUS LABELS:
+- status = 'pending'     -> display as "Production Not Approved"
+- status = 'in_progress' -> display as "Production Not Approved"
+- status = 'completed'   -> display as "Completed"
+- status = 'cancelled'   -> display as "Cancelled"
+By default (when user asks for production pending), show status IN ('pending','in_progress') — both shown as "Production Not Approved".
+Only show completed or cancelled when the user explicitly asks for them.
 
 IMPORTANT: Use correct table name capitalization:
 - Database_despatch (capital D)
@@ -546,6 +664,7 @@ IMPORTANT: Use correct table name capitalization:
 - Database_condition (capital D)
 - Database_shape (capital D)
 - Database_size (capital D)
+- Database_production (capital D)
 
 COMMON QUERIES:
 - Order by number: SELECT from Database_orderregister WHERE order_number = ?
@@ -627,6 +746,50 @@ COMMON QUERIES:
       if (regular.length === 0 && (rejected.length > 0 || quarantine.length > 0)) {
         out += `Regular Stock : No data\n\n`;
       }
+
+      return `\n\n[DIRECT_REPLY:\n${out}]`;
+    }
+
+    // ── Production results ──
+    const isProductionResult = result._isProductionQuery || (data[0] && data[0].ppno !== undefined);
+
+    if (isProductionResult) {
+      const wantsCompletedFmt  = /\bcompleted?\b/i.test(result._statusContext || '');
+      const wantsCancelledFmt  = /\bcancel(?:led)?\b/i.test(result._statusContext || '');
+      // For exact PP lookups, always show real status labels (not the "pending bucket" label)
+      const showingPending     = !result._ppLookup && !wantsCompletedFmt && !wantsCancelledFmt;
+
+      const statusLabel = s => {
+        if (s === 'completed')   return 'Completed';
+        if (s === 'cancelled')   return 'Cancelled';
+        if (s === 'in_progress') return showingPending ? 'Production Not Approved' : 'In Progress';
+        if (s === 'pending')     return 'Production Not Approved';
+        return s || 'Unknown';
+      };
+
+      let totalQty = 0;
+      data.forEach(r => { totalQty += parseFloat(r.quantity_kg || 0); });
+
+      let out = `Found ${result.count} production record(s):\n`;
+      out += '─'.repeat(30) + '\n';
+
+      data.forEach((r, i) => {
+        out += `${i + 1}. ${r.ppno || r.id || 'N/A'}`;
+        if (r.customer_name) out += ` | ${r.customer_name}`;
+        out += '\n';
+
+        if (r.sku)              out += `   SKU         : ${r.sku}\n`;
+        if (r.quantity_kg != null) out += `   Qty (kg)    : ${Number(r.quantity_kg).toLocaleString()}\n`;
+        if (r.status)           out += `   Status      : ${statusLabel(r.status)}\n`;
+        if (r.expected_date)    out += `   Expected    : ${r.expected_date}\n`;
+        if (r.ppnoreference)    out += `   PP Ref      : ${r.ppnoreference}\n`;
+        if (r.length)           out += `   Length      : ${r.length}\n`;
+        if (r.notes)            out += `   Notes       : ${r.notes}\n`;
+        out += '\n';
+      });
+
+      out += '─'.repeat(30) + '\n';
+      out += `Total Qty : ${totalQty.toLocaleString()} kg\n`;
 
       return `\n\n[DIRECT_REPLY:\n${out}]`;
     }

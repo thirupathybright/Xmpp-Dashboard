@@ -58,7 +58,7 @@ Keep responses simple and concise. Plain text only. No markdown. No emojis.`
 const chatHistory = new Map();
 
 // Maximum messages to keep per user (prevents memory bloat)
-const MAX_HISTORY_PER_USER = 10;
+const MAX_HISTORY_PER_USER = 4;
 
 /**
  * Get AI response for a user message
