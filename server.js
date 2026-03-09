@@ -716,6 +716,7 @@ async function setUserNickname(username, password, nickname) {
         await xmpp.send(vcardSet);
         const result = await responsePromise;
         console.log(`[setNickname:${username}] Result: ${JSON.stringify(result)}`);
+        if (result.success) { nicknameCache[username] = nickname; saveNicknameCache(nicknameCache); }
         clearTimeout(timeout);
         await xmpp.stop();
         resolve(result);
@@ -972,39 +973,99 @@ app.get("/users/list", (req, res) => {
   }
 });
 
+// Persistent nickname cache — survives server restarts.
+// Written to disk on every successful setUserNickname call.
+const NICKNAME_CACHE_FILE = `${__dirname}/nickname_cache.json`;
+
+function loadNicknameCache() {
+  try {
+    if (fs.existsSync(NICKNAME_CACHE_FILE)) {
+      return JSON.parse(fs.readFileSync(NICKNAME_CACHE_FILE, "utf8"));
+    }
+  } catch (_) {}
+  return {};
+}
+
+function saveNicknameCache(cache) {
+  try {
+    fs.writeFileSync(NICKNAME_CACHE_FILE, JSON.stringify(cache, null, 2), "utf8");
+  } catch (_) {}
+}
+
+const nicknameCache = loadNicknameCache();
+
 // Prosody data root
 const PROSODY_ROOT = `/var/lib/prosody/chat%2ethirupathybright%2ein`;
-
-// Prosody stores PEP nicknames in a URL-encoded directory name
-// http://jabber.org/protocol/nick  =>  pep_http%3a%2f%2fjabber%2eorg%2fprotocol%2fnick
 const PEP_NICK_DIR   = `${PROSODY_ROOT}/pep_http%3a%2f%2fjabber%2eorg%2fprotocol%2fnick`;
-// vCard4 PEP node
 const PEP_VCARD4_DIR = `${PROSODY_ROOT}/pep_urn%3axmpp%3avcard4`;
+
+// Extract all top-level balanced brace blocks from a Lua string.
+function extractTopLevelBlocks(content) {
+  const blocks = [];
+  let depth = 0;
+  let start = -1;
+  for (let i = 0; i < content.length; i++) {
+    if (content[i] === '{') {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (content[i] === '}') {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        blocks.push(content.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+  return blocks;
+}
+
+// Extract a string value from a Lua block identified by ["name"] = "blockName".
+// Works with nested braces (e.g. ["attr"] = {} inside the block).
+function extractLuaBlockValue(content, blockName) {
+  const nameTag = `["name"] = "${blockName}"`;
+  for (const block of extractTopLevelBlocks(content)) {
+    if (!block.includes(nameTag)) continue;
+    // Find the first inner sub-block (the value container), then grab its first quoted string
+    const innerBlocks = extractTopLevelBlocks(block.slice(1, -1));
+    for (const inner of innerBlocks) {
+      // The value string appears before any ["name"] key inside the inner block
+      const valMatch = inner.match(/^\s*\{\s*"([^"]+)"/s);
+      if (valMatch && valMatch[1].trim()) return valMatch[1].trim();
+    }
+  }
+  return null;
+}
 
 function readNicknameFromDisk(username) {
   // 1. Try vCard4 PEP node (urn:xmpp:vcard4)
-  //    Prosody stores as Lua: "VALUE"; ["name"] = "text"; inside fn block
   try {
     const vcard4Path = `${PEP_VCARD4_DIR}/${username}.list`;
     if (fs.existsSync(vcard4Path)) {
       const content = fs.readFileSync(vcard4Path, "utf8");
-      // Lua format: "VALUE"; ["name"] = "text";
-      const textMatch = content.match(/"([^"]+)";\s*\["name"\]\s*=\s*"text"/);
-      if (textMatch && textMatch[1].trim()) return textMatch[1].trim();
+      // Try fn block first, then nickname block
+      const val = extractLuaBlockValue(content, "fn") || extractLuaBlockValue(content, "nickname");
+      if (val) {
+        if (nicknameCache[username] !== val) { nicknameCache[username] = val; saveNicknameCache(nicknameCache); }
+        return val;
+      }
     }
   } catch (_) {}
 
   // 2. Try PEP nick node (http://jabber.org/protocol/nick)
-  //    Prosody stores as Lua: "VALUE"; ["name"] = "nick";
   try {
     const pepNickPath = `${PEP_NICK_DIR}/${username}.list`;
     if (fs.existsSync(pepNickPath)) {
       const content = fs.readFileSync(pepNickPath, "utf8");
-      // Lua format: "VALUE"; ["name"] = "nick";
-      const luaMatch = content.match(/"([^"]+)";\s*\["name"\]\s*=\s*"nick"/);
-      if (luaMatch && luaMatch[1].trim()) return luaMatch[1].trim();
+      const val = extractLuaBlockValue(content, "nick");
+      if (val) {
+        if (nicknameCache[username] !== val) { nicknameCache[username] = val; saveNicknameCache(nicknameCache); }
+        return val;
+      }
     }
   } catch (_) {}
+
+  // 3. Fallback: cache (set immediately on dashboard nickname update)
+  if (nicknameCache[username]) return nicknameCache[username];
 
   return "";
 }
