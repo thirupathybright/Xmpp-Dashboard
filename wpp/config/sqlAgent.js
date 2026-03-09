@@ -48,7 +48,8 @@ class SQLAgent {
         'Database_condition',
         'Database_shape',
         'Database_size',
-        'Database_production'
+        'Database_production',
+        'Database_tripsheet'
       ];
 
       for (const tableName of tables) {
@@ -261,6 +262,61 @@ class SQLAgent {
         };
       }
 
+      // ── Tripsheet number fast-path (e.g. "TS-2602-001 production plan") ──
+      // Also handles "tripsheet production pending" — queries production via tripsheet join.
+      const tsnoMatch = userQuestion.match(/\b(TS[-\s]\d{4}[-\s]\d+)\b/i);
+      const isTripsheetQuery = /\btripsheet\b/i.test(userQuestion);
+
+      if (tsnoMatch) {
+        const tsno = tsnoMatch[1].replace(/\s/g, '-').toUpperCase();
+        const tsnoLike = `%${tsno.replace(/^TS[-\s]/i, '')}%`;
+        console.log(`⚡ Tripsheet number fast-path for tripsheetno: "${tsno}"`);
+
+        const tsSQL = `
+SELECT
+  p.id, p.ppno, p.ppnoreference, p.status AS production_status,
+  p.quantity_kg, p.expected_date, p.length, p.notes, p.customer_id,
+  p.grade_id, p.condition_id, p.shape_id, p.finish_metal_size_id,
+  p.created_at, p.updated_at,
+  c.customer_name,
+  CONCAT(g.name, ' - ', cond.name, ' - ', sh.name, ' - ', sz.name) AS sku,
+  t.tripsheetno AS tripsheetno,
+  t.status AS tripsheet_status
+FROM thirupathybright.Database_tripsheet t
+JOIN thirupathybright.Database_production p ON t.production_reference_id = p.id
+LEFT JOIN thirupathybright.mastercustomer c ON p.customer_id = c.id
+LEFT JOIN thirupathybright.Database_grade g ON p.grade_id = g.id
+LEFT JOIN thirupathybright.Database_condition cond ON p.condition_id = cond.id
+LEFT JOIN thirupathybright.Database_shape sh ON p.shape_id = sh.id
+LEFT JOIN thirupathybright.Database_size sz ON p.finish_metal_size_id = sz.id
+WHERE UPPER(t.tripsheetno) = ? OR UPPER(t.tripsheetno) LIKE ?`.trim();
+
+        const tsResult = await this.executeQuery(tsSQL, [tsno, tsnoLike]);
+
+        if (!tsResult.success || tsResult.count === 0) {
+          return {
+            success: true,
+            query: tsSQL,
+            data: [],
+            count: 0,
+            error: null,
+            _directReply: `Tripsheet ${tsno} not found.\nPlease check the tripsheet number and try again.`
+          };
+        }
+
+        return {
+          success: tsResult.success,
+          query: tsSQL,
+          data: tsResult.rows,
+          count: tsResult.count,
+          error: tsResult.error,
+          _isProductionQuery: true,
+          _statusContext: userQuestion
+        };
+      }
+
+      // (Tripsheet keyword without a specific number falls through to the production fast-path below)
+
       // ── PP number fast-path (e.g. "Pp-2602-1595 production plan data") ──
       // Matches PP-YYYY-NNNN or PP YYYY NNNN patterns and queries production by ppno.
       const ppnoMatch = userQuestion.match(/\b(PP[-\s]\d{4}[-\s]\d+)\b/i);
@@ -273,15 +329,21 @@ class SQLAgent {
 
         const ppSQL = `
 SELECT
-  p.*,
+  p.id, p.ppno, p.ppnoreference, p.status AS production_status,
+  p.quantity_kg, p.expected_date, p.length, p.notes, p.customer_id,
+  p.grade_id, p.condition_id, p.shape_id, p.finish_metal_size_id,
+  p.created_at, p.updated_at,
   c.customer_name,
-  CONCAT(g.name, ' - ', cond.name, ' - ', sh.name, ' - ', sz.name) AS sku
+  CONCAT(g.name, ' - ', cond.name, ' - ', sh.name, ' - ', sz.name) AS sku,
+  t.tripsheetno AS tripsheetno,
+  t.status AS tripsheet_status
 FROM thirupathybright.Database_production p
 LEFT JOIN thirupathybright.mastercustomer c ON p.customer_id = c.id
 LEFT JOIN thirupathybright.Database_grade g ON p.grade_id = g.id
 LEFT JOIN thirupathybright.Database_condition cond ON p.condition_id = cond.id
 LEFT JOIN thirupathybright.Database_shape sh ON p.shape_id = sh.id
 LEFT JOIN thirupathybright.Database_size sz ON p.finish_metal_size_id = sz.id
+LEFT JOIN thirupathybright.Database_tripsheet t ON t.production_reference_id = p.id
 WHERE UPPER(p.ppno) = ? OR UPPER(p.ppno) LIKE ? OR UPPER(p.ppnoreference) = ? OR UPPER(p.ppnoreference) LIKE ?`.trim();
 
         const ppResult = await this.executeQuery(ppSQL, [ppno, ppnoLike, ppno, ppnoLike]);
@@ -305,15 +367,14 @@ WHERE UPPER(p.ppno) = ? OR UPPER(p.ppno) LIKE ? OR UPPER(p.ppnoreference) = ? OR
           count: ppResult.count,
           error: ppResult.error,
           _isProductionQuery: true,
-          _statusContext: userQuestion,
-          _ppLookup: true   // exact PP lookup — show real status, not "Not Approved" bucket
+          _statusContext: userQuestion
         };
       }
 
       // ── Production query fast-path ──
-      // Triggers when the question is about production (plan/pending/in_progress/completed/customer/sku)
+      // Triggers when the question is about production OR tripsheet (without a specific number).
       // Must run BEFORE stock fast-path so "Pp-XXXX production pending" doesn't get grabbed as a SKU.
-      const isProductionQuery = /\bproduction\b/i.test(userQuestion);
+      const isProductionQuery = /\bproduction\b/i.test(userQuestion) || isTripsheetQuery;
 
       if (isProductionQuery) {
         console.log(`⚡ Production fast-path triggered`);
@@ -337,15 +398,21 @@ WHERE UPPER(p.ppno) = ? OR UPPER(p.ppno) LIKE ? OR UPPER(p.ppnoreference) = ? OR
 
         const prodSQL = `
 SELECT
-  p.*,
+  p.id, p.ppno, p.ppnoreference, p.status AS production_status,
+  p.quantity_kg, p.expected_date, p.length, p.notes, p.customer_id,
+  p.grade_id, p.condition_id, p.shape_id, p.finish_metal_size_id,
+  p.created_at, p.updated_at,
   c.customer_name,
-  CONCAT(g.name, ' - ', cond.name, ' - ', sh.name, ' - ', sz.name) AS sku
+  CONCAT(g.name, ' - ', cond.name, ' - ', sh.name, ' - ', sz.name) AS sku,
+  t.tripsheetno AS tripsheetno,
+  t.status AS tripsheet_status
 FROM thirupathybright.Database_production p
 LEFT JOIN thirupathybright.mastercustomer c ON p.customer_id = c.id
 LEFT JOIN thirupathybright.Database_grade g ON p.grade_id = g.id
 LEFT JOIN thirupathybright.Database_condition cond ON p.condition_id = cond.id
 LEFT JOIN thirupathybright.Database_shape sh ON p.shape_id = sh.id
 LEFT JOIN thirupathybright.Database_size sz ON p.finish_metal_size_id = sz.id
+LEFT JOIN thirupathybright.Database_tripsheet t ON t.production_reference_id = p.id
 WHERE ${statusClause}${prodCustomerClause}
 ORDER BY p.created_at DESC`.trim();
 
@@ -374,7 +441,7 @@ ORDER BY p.created_at DESC`.trim();
         'order', 'orders', 'pending', 'completed', 'progress', 'inprogress',
         'dispatch', 'dispatches', 'invoice', 'invoices', 'status', 'customer',
         // production-related words — prevent production queries from hitting stock fast-path
-        'production', 'plan', 'data', 'number', 'pp',
+        'production', 'plan', 'data', 'number', 'pp', 'tripsheet', 'ts',
         // company name words — "Poly Hose India Pvt Ltd" should NOT be a SKU
         'pvt', 'ltd', 'private', 'limited', 'india', 'industries', 'company',
         'corp', 'corporation', 'enterprises', 'solutions', 'services', 'group',
@@ -637,17 +704,18 @@ Return ONLY valid SQL query, nothing else. No explanations, no markdown, just SQ
 - Database_production.condition_id -> Database_condition.id
 - Database_production.shape_id -> Database_shape.id
 - Database_production.finish_metal_size_id -> Database_size.id
+- Database_tripsheet.production_reference_id -> Database_production.id
 
 SKU FORMAT: The SKU for an order or production record is built as:
   CONCAT(g.name, ' - ', cond.name, ' - ', sh.name, ' - ', sz.name)
 where g = Database_grade, cond = Database_condition, sh = Database_shape, sz = Database_size
 
 PRODUCTION STATUS LABELS:
-- status = 'pending'     -> display as "Production Not Approved"
-- status = 'in_progress' -> display as "Production Not Approved"
+- status = 'pending'     -> display as "Pending"
+- status = 'in_progress' -> display as "In Progress"
 - status = 'completed'   -> display as "Completed"
 - status = 'cancelled'   -> display as "Cancelled"
-By default (when user asks for production pending), show status IN ('pending','in_progress') — both shown as "Production Not Approved".
+By default (when user asks for production pending), show status IN ('pending','in_progress').
 Only show completed or cancelled when the user explicitly asks for them.
 
 IMPORTANT: Use correct table name capitalization:
@@ -665,6 +733,7 @@ IMPORTANT: Use correct table name capitalization:
 - Database_shape (capital D)
 - Database_size (capital D)
 - Database_production (capital D)
+- Database_tripsheet (capital D)
 
 COMMON QUERIES:
 - Order by number: SELECT from Database_orderregister WHERE order_number = ?
@@ -754,16 +823,16 @@ COMMON QUERIES:
     const isProductionResult = result._isProductionQuery || (data[0] && data[0].ppno !== undefined);
 
     if (isProductionResult) {
-      const wantsCompletedFmt  = /\bcompleted?\b/i.test(result._statusContext || '');
-      const wantsCancelledFmt  = /\bcancel(?:led)?\b/i.test(result._statusContext || '');
-      // For exact PP lookups, always show real status labels (not the "pending bucket" label)
-      const showingPending     = !result._ppLookup && !wantsCompletedFmt && !wantsCancelledFmt;
+      const _r0 = data[0] || {};
+      console.log(`🔍 Production formatter raw keys: ${Object.keys(_r0).join(', ')}`);
+      console.log(`🔍 Production formatter values: production_status="${_r0.production_status}" status="${_r0.status}" tripsheet_status="${_r0.tripsheet_status}"`);
+      console.log(`🔍 Full first row:`, JSON.stringify(_r0));
 
       const statusLabel = s => {
+        if (s === 'pending')     return 'Pending';
+        if (s === 'in_progress') return 'In Progress';
         if (s === 'completed')   return 'Completed';
         if (s === 'cancelled')   return 'Cancelled';
-        if (s === 'in_progress') return showingPending ? 'Production Not Approved' : 'In Progress';
-        if (s === 'pending')     return 'Production Not Approved';
         return s || 'Unknown';
       };
 
@@ -778,11 +847,13 @@ COMMON QUERIES:
         if (r.customer_name) out += ` | ${r.customer_name}`;
         out += '\n';
 
+        const prodStatus = ('production_status' in r) ? r.production_status : r.status;
         if (r.sku)              out += `   SKU         : ${r.sku}\n`;
         if (r.quantity_kg != null) out += `   Qty (kg)    : ${Number(r.quantity_kg).toLocaleString()}\n`;
-        if (r.status)           out += `   Status      : ${statusLabel(r.status)}\n`;
+        if (prodStatus)         out += `   Status      : ${statusLabel(prodStatus)}\n`;
         if (r.expected_date)    out += `   Expected    : ${r.expected_date}\n`;
         if (r.ppnoreference)    out += `   PP Ref      : ${r.ppnoreference}\n`;
+        if (r.tripsheetno)      out += `   Tripsheet   : ${r.tripsheetno}${r.tripsheet_status ? ' (Tripsheet ' + r.tripsheet_status + ')' : ''}\n`;
         if (r.length)           out += `   Length      : ${r.length}\n`;
         if (r.notes)            out += `   Notes       : ${r.notes}\n`;
         out += '\n';

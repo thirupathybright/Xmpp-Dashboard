@@ -584,6 +584,155 @@ async function stopAIBot() {
   }
 }
 
+// ===== NICKNAME (vCard FN) HELPERS =====
+
+/**
+ * Get a user's nickname by logging in as them and fetching their vCard.
+ * Returns the FN field from vCard, or null if not set.
+ */
+async function getUserNickname(username, password) {
+  const jid = `${username}@${DOMAIN}`;
+  const xmpp = client({
+    service: XMPP_SERVICE,
+    domain: DOMAIN,
+    username,
+    password,
+  });
+
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      xmpp.stop().catch(() => {});
+      resolve(null);
+    }, 8000);
+
+    xmpp.on("error", () => {
+      clearTimeout(timeout);
+      xmpp.stop().catch(() => {});
+      resolve(null);
+    });
+
+    xmpp.on("online", async () => {
+      try {
+        const requestId = `vcard_get_${Date.now()}`;
+        const vcardRequest = xml("iq", { type: "get", id: requestId },
+          xml("vCard", { xmlns: "vcard-temp" })
+        );
+
+        const responsePromise = new Promise((res2, rej2) => {
+          const t2 = setTimeout(() => {
+            xmpp.removeListener("stanza", onStanza);
+            res2(null);
+          }, 5000);
+
+          function onStanza(stanza) {
+            if (stanza.is("iq") && stanza.attrs.id === requestId) {
+              clearTimeout(t2);
+              xmpp.removeListener("stanza", onStanza);
+              const vcard = stanza.getChild("vCard", "vcard-temp");
+              const fn = vcard && vcard.getChildText("FN");
+              res2(fn || null);
+            }
+          }
+          xmpp.on("stanza", onStanza);
+        });
+
+        await xmpp.send(xml("presence"));
+        await xmpp.send(vcardRequest);
+        const nickname = await responsePromise;
+        clearTimeout(timeout);
+        await xmpp.stop();
+        resolve(nickname);
+      } catch (e) {
+        clearTimeout(timeout);
+        xmpp.stop().catch(() => {});
+        resolve(null);
+      }
+    });
+
+    xmpp.start().catch(() => {
+      clearTimeout(timeout);
+      resolve(null);
+    });
+  });
+}
+
+/**
+ * Set a user's nickname by logging in as them and publishing a vCard with FN set.
+ */
+async function setUserNickname(username, password, nickname) {
+  const xmpp = client({
+    service: XMPP_SERVICE,
+    domain: DOMAIN,
+    username,
+    password,
+  });
+
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      xmpp.stop().catch(() => {});
+      resolve({ success: false, error: "Timeout connecting to XMPP" });
+    }, 8000);
+
+    xmpp.on("error", (err) => {
+      clearTimeout(timeout);
+      xmpp.stop().catch(() => {});
+      resolve({ success: false, error: err.message });
+    });
+
+    xmpp.on("online", async () => {
+      try {
+        console.log(`[setNickname:${username}] Online, sending vCard IQ set for nickname="${nickname}"`);
+        const requestId = `vcard_set_${Date.now()}`;
+        const vcardSet = xml("iq", { type: "set", id: requestId },
+          xml("vCard", { xmlns: "vcard-temp" },
+            xml("FN", {}, nickname),
+            xml("NICKNAME", {}, nickname)
+          )
+        );
+
+        const responsePromise = new Promise((res2) => {
+          const t2 = setTimeout(() => {
+            xmpp.removeListener("stanza", onStanza);
+            res2({ success: false, error: "Timeout waiting for vCard response" });
+          }, 5000);
+
+          function onStanza(stanza) {
+            if (stanza.is("iq") && stanza.attrs.id === requestId) {
+              clearTimeout(t2);
+              xmpp.removeListener("stanza", onStanza);
+              console.log(`[setNickname:${username}] vCard IQ response: ${stanza.toString()}`);
+              if (stanza.attrs.type === "result") {
+                res2({ success: true });
+              } else {
+                const errEl = stanza.getChild("error");
+                res2({ success: false, error: errEl ? errEl.toString() : "vCard set failed" });
+              }
+            }
+          }
+          xmpp.on("stanza", onStanza);
+        });
+
+        await xmpp.send(xml("presence"));
+        await xmpp.send(vcardSet);
+        const result = await responsePromise;
+        console.log(`[setNickname:${username}] Result: ${JSON.stringify(result)}`);
+        clearTimeout(timeout);
+        await xmpp.stop();
+        resolve(result);
+      } catch (e) {
+        clearTimeout(timeout);
+        xmpp.stop().catch(() => {});
+        resolve({ success: false, error: e.message });
+      }
+    });
+
+    xmpp.start().catch((e) => {
+      clearTimeout(timeout);
+      resolve({ success: false, error: e.message });
+    });
+  });
+}
+
 // ---- routes ----
 app.get("/", (req, res) => {
   try {
@@ -601,16 +750,30 @@ app.get("/", (req, res) => {
   }
 });
 
-app.post("/users/add", (req, res) => {
+app.post("/users/add", async (req, res) => {
   try {
     const user = safeUsername(req.body.username);
     const pass = (req.body.password || "").trim();
+    const nickname = (req.body.nickname || "").trim();
     if (!user) throw new Error("Invalid username. Use letters/numbers/._- only.");
     if (!pass) throw new Error("Password cannot be empty.");
 
     const jid = `${user}@${DOMAIN}`;
     // Create user (non-interactive)
     runProsodyctlWithPassword("adduser", jid, pass);
+
+    // Set nickname via vCard if provided
+    if (nickname) {
+      // Small delay to let Prosody register the new account
+      await new Promise((r) => setTimeout(r, 800));
+      const nickResult = await setUserNickname(user, pass, nickname);
+      if (nickResult.success) {
+        return res.redirect("/?msg=" + encodeURIComponent(`✅ User created: ${jid} with nickname "${nickname}"`));
+      } else {
+        // User was created but nickname failed — still a success, just warn
+        return res.redirect("/?msg=" + encodeURIComponent(`✅ User created: ${jid} (nickname could not be set: ${nickResult.error})`));
+      }
+    }
 
     res.redirect("/?msg=" + encodeURIComponent(`✅ User created: ${jid}`));
   } catch (e) {
@@ -809,6 +972,92 @@ app.get("/users/list", (req, res) => {
   }
 });
 
+// Prosody data root
+const PROSODY_ROOT = `/var/lib/prosody/chat%2ethirupathybright%2ein`;
+
+// Prosody stores PEP nicknames in a URL-encoded directory name
+// http://jabber.org/protocol/nick  =>  pep_http%3a%2f%2fjabber%2eorg%2fprotocol%2fnick
+const PEP_NICK_DIR   = `${PROSODY_ROOT}/pep_http%3a%2f%2fjabber%2eorg%2fprotocol%2fnick`;
+// vCard4 PEP node
+const PEP_VCARD4_DIR = `${PROSODY_ROOT}/pep_urn%3axmpp%3avcard4`;
+
+function readNicknameFromDisk(username) {
+  // 1. Try vCard4 PEP node (urn:xmpp:vcard4)
+  //    Prosody stores as Lua: "VALUE"; ["name"] = "text"; inside fn block
+  try {
+    const vcard4Path = `${PEP_VCARD4_DIR}/${username}.list`;
+    if (fs.existsSync(vcard4Path)) {
+      const content = fs.readFileSync(vcard4Path, "utf8");
+      // Lua format: "VALUE"; ["name"] = "text";
+      const textMatch = content.match(/"([^"]+)";\s*\["name"\]\s*=\s*"text"/);
+      if (textMatch && textMatch[1].trim()) return textMatch[1].trim();
+    }
+  } catch (_) {}
+
+  // 2. Try PEP nick node (http://jabber.org/protocol/nick)
+  //    Prosody stores as Lua: "VALUE"; ["name"] = "nick";
+  try {
+    const pepNickPath = `${PEP_NICK_DIR}/${username}.list`;
+    if (fs.existsSync(pepNickPath)) {
+      const content = fs.readFileSync(pepNickPath, "utf8");
+      // Lua format: "VALUE"; ["name"] = "nick";
+      const luaMatch = content.match(/"([^"]+)";\s*\["name"\]\s*=\s*"nick"/);
+      if (luaMatch && luaMatch[1].trim()) return luaMatch[1].trim();
+    }
+  } catch (_) {}
+
+  return "";
+}
+
+// Get list of users with their stored nicknames from vCard files on disk
+app.get("/users/list-with-nicknames", (req, res) => {
+  try {
+    const usernames = listUsers();
+    const result = usernames.map((u) => ({
+      username: u,
+      jid: `${u}@${DOMAIN}`,
+      nickname: readNicknameFromDisk(u),
+    }));
+    res.json({ success: true, users: result });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e?.message || String(e) });
+  }
+});
+
+// Debug: show raw PEP nick file contents to verify parsing format
+app.get("/debug/vcards", (req, res) => {
+  try {
+    const info = {
+      pepNickDir: PEP_NICK_DIR,
+      pepNickDirExists: fs.existsSync(PEP_NICK_DIR),
+      pepNickFiles: {},
+      pepVcard4Dir: PEP_VCARD4_DIR,
+      pepVcard4DirExists: fs.existsSync(PEP_VCARD4_DIR),
+      pepVcard4Files: {},
+    };
+
+    if (info.pepNickDirExists) {
+      for (const f of fs.readdirSync(PEP_NICK_DIR)) {
+        try {
+          info.pepNickFiles[f] = fs.readFileSync(`${PEP_NICK_DIR}/${f}`, "utf8").slice(0, 500);
+        } catch (e) { info.pepNickFiles[f] = `ERROR: ${e.message}`; }
+      }
+    }
+
+    if (info.pepVcard4DirExists) {
+      for (const f of fs.readdirSync(PEP_VCARD4_DIR)) {
+        try {
+          info.pepVcard4Files[f] = fs.readFileSync(`${PEP_VCARD4_DIR}/${f}`, "utf8").slice(0, 500);
+        } catch (e) { info.pepVcard4Files[f] = `ERROR: ${e.message}`; }
+      }
+    }
+
+    res.json(info);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Start AI Bot route
 app.post("/ai-bot/start", async (req, res) => {
   try {
@@ -998,6 +1247,95 @@ app.get("/marketing-persons/user/:userJid", (req, res) => {
       success: false,
       error: e?.message || String(e)
     });
+  }
+});
+
+// ===== NICKNAME API ENDPOINTS =====
+
+/**
+ * GET /users/nickname/:username
+ * Get a user's nickname. Requires their current password to log in and fetch vCard.
+ * Query param: ?password=xxx
+ */
+app.get("/users/nickname/:username", async (req, res) => {
+  try {
+    const user = safeUsername(req.params.username);
+    const pass = (req.query.password || "").trim();
+
+    if (!user) return res.status(400).json({ success: false, error: "Invalid username" });
+    if (!pass) return res.status(400).json({ success: false, error: "Password is required to fetch vCard" });
+
+    const nickname = await getUserNickname(user, pass);
+    res.json({ success: true, username: user, nickname: nickname || "" });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e?.message || String(e) });
+  }
+});
+
+/**
+ * POST /users/nickname
+ * Set a user's nickname (FN in vCard).
+ * Body: { username, password, nickname }
+ * The password is used to authenticate as the user to publish the vCard.
+ * If you want to reset the password first, use /users/passwd before this.
+ */
+app.post("/users/nickname", async (req, res) => {
+  try {
+    const user = safeUsername(req.body.username);
+    const pass = (req.body.password || "").trim();
+    const nickname = (req.body.nickname || "").trim();
+
+    if (!user) return res.status(400).json({ success: false, error: "Invalid username" });
+    if (!pass) return res.status(400).json({ success: false, error: "Password is required" });
+    if (!nickname) return res.status(400).json({ success: false, error: "Nickname cannot be empty" });
+
+    const result = await setUserNickname(user, pass, nickname);
+    if (result.success) {
+      res.json({ success: true, message: `Nickname set to "${nickname}" for ${user}@${DOMAIN}` });
+    } else {
+      res.status(500).json({ success: false, error: result.error });
+    }
+  } catch (e) {
+    res.status(500).json({ success: false, error: e?.message || String(e) });
+  }
+});
+
+/**
+ * POST /users/nickname/with-reset
+ * Admin convenience: reset the user's password to a temp value, set the vCard nickname,
+ * and leave the password as the new value.
+ * Body: { username, newPassword, nickname }
+ */
+app.post("/users/nickname/with-reset", async (req, res) => {
+  try {
+    const user = safeUsername(req.body.username);
+    const newPass = (req.body.newPassword || "").trim();
+    const nickname = (req.body.nickname || "").trim();
+
+    if (!user) return res.status(400).json({ success: false, error: "Invalid username" });
+    if (!newPass) return res.status(400).json({ success: false, error: "New password is required" });
+    if (!nickname) return res.status(400).json({ success: false, error: "Nickname cannot be empty" });
+
+    const jid = `${user}@${DOMAIN}`;
+
+    // Step 1: Reset password via prosodyctl
+    runProsodyctlWithPassword("passwd", jid, newPass);
+
+    // Step 2: Small delay to let Prosody flush the new password
+    await new Promise((r) => setTimeout(r, 800));
+
+    // Step 3: Log in as user and set vCard nickname
+    const result = await setUserNickname(user, newPass, nickname);
+    if (result.success) {
+      res.json({
+        success: true,
+        message: `Nickname set to "${nickname}" for ${jid}. Password was also updated to the provided value.`
+      });
+    } else {
+      res.status(500).json({ success: false, error: `Password reset succeeded but vCard failed: ${result.error}` });
+    }
+  } catch (e) {
+    res.status(500).json({ success: false, error: e?.message || String(e) });
   }
 });
 

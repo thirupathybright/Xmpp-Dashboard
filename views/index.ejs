@@ -2,409 +2,675 @@
 <html>
 <head>
   <meta charset="utf-8"/>
-  <title>TBI - <%= DOMAIN %></title>
+  <title>TBI Admin - <%= DOMAIN %></title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 24px; background: #f6f7fb; }
-    .wrap { max-width: 1100px; margin: 0 auto; }
-    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    .card { background: #fff; border: 1px solid #e3e6ee; padding: 16px; border-radius: 14px; }
-    h1 { margin: 0 0 12px 0; }
-    h2 { margin: 0 0 10px 0; font-size: 18px; }
-    input, textarea { width: 100%; padding: 10px; border-radius: 10px; border: 1px solid #cfd6ea; box-sizing: border-box; }
-    textarea { height: 120px; }
-    button { padding: 10px 14px; border-radius: 10px; border: 1px solid #cfd6ea; background: #111827; color: #fff; cursor: pointer; }
-    button.danger { background: #b91c1c; }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; margin: 0; background: #f1f5f9; }
+
+    /* ── Top bar ── */
+    .topbar {
+      background: #111827; color: #fff;
+      display: flex; align-items: center; gap: 12px;
+      padding: 0 24px; height: 52px;
+    }
+    .topbar h1 { font-size: 17px; margin: 0; flex: 1; }
+    .topbar .domain { font-size: 12px; background: #374151; padding: 4px 10px; border-radius: 999px; }
+
+    /* ── Nav tabs ── */
+    .nav {
+      background: #fff; border-bottom: 2px solid #e5e7eb;
+      display: flex; padding: 0 24px; gap: 4px;
+    }
+    .nav-tab {
+      padding: 12px 18px; cursor: pointer; font-size: 14px; font-weight: 500;
+      color: #6b7280; border-bottom: 3px solid transparent; margin-bottom: -2px;
+      border-radius: 0; background: none; border-top: none; border-left: none; border-right: none;
+      transition: color .15s;
+    }
+    .nav-tab:hover { color: #111827; }
+    .nav-tab.active { color: #2563eb; border-bottom-color: #2563eb; }
+
+    /* ── Content ── */
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Cards ── */
+    .card { background: #fff; border: 1px solid #e3e6ee; padding: 20px; border-radius: 14px; margin-bottom: 20px; }
+    h2 { margin: 0 0 14px 0; font-size: 17px; }
+    h3 { margin: 0 0 10px 0; font-size: 14px; color: #374151; }
+
+    /* ── Forms ── */
+    .form-grid { display: grid; gap: 10px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; align-items: end; }
+    .form-row-2 { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end; }
+    label { font-size: 12px; color: #6b7280; display: block; margin-bottom: 4px; }
+    input, textarea, select {
+      width: 100%; padding: 10px; border-radius: 8px;
+      border: 1px solid #d1d5db; font-size: 14px;
+    }
+    input:focus, textarea:focus { outline: 2px solid #2563eb; border-color: #2563eb; }
+    textarea { height: 110px; resize: vertical; }
+
+    /* ── Buttons ── */
+    button, .btn {
+      padding: 10px 16px; border-radius: 8px; border: none;
+      background: #111827; color: #fff; cursor: pointer; font-size: 14px;
+      white-space: nowrap; display: inline-flex; align-items: center; gap: 6px;
+    }
+    button:hover { opacity: .88; }
+    .btn-green { background: #059669; }
+    .btn-blue  { background: #2563eb; }
+    .btn-amber { background: #b45309; }
+    .btn-red   { background: #dc2626; }
+    .btn-sm    { padding: 6px 12px; font-size: 12px; }
+
+    /* ── Table ── */
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    thead tr { background: #f9fafb; }
+    th { padding: 10px 12px; text-align: left; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb; }
+    td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #f9fafb; }
+
+    /* ── Alerts ── */
+    .msg { padding: 10px 14px; border-radius: 8px; background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; margin-bottom: 16px; }
+    .err { padding: 10px 14px; border-radius: 8px; background: #fef2f2; border: 1px solid #fecaca; color: #7f1d1d; margin-bottom: 16px; white-space: pre-wrap; }
+
+    /* ── Misc ── */
     .hint { font-size: 12px; color: #6b7280; margin-top: 6px; }
-    .pill { display: inline-block; padding: 6px 10px; border-radius: 999px; background: #eef2ff; color: #3730a3; font-size: 12px; }
-    .msg { padding: 10px 12px; border-radius: 10px; background: #ecfdf5; border: 1px solid #a7f3d0; margin-bottom: 14px; color: #065f46; }
-    .err { padding: 10px 12px; border-radius: 10px; background: #fef2f2; border: 1px solid #fecaca; margin-bottom: 14px; color: #7f1d1d; white-space: pre-wrap; }
-    .users { columns: 2; margin: 0; padding-left: 18px; }
-    .users li { padding: 4px 0; }
-    .top { display:flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
-    .actions form { display: grid; gap: 10px; }
-    code { background: #f3f4f6; padding: 2px 6px; border-radius: 6px; }
+    .pill { display: inline-block; padding: 3px 10px; border-radius: 999px; background: #eef2ff; color: #3730a3; font-size: 12px; }
+    code { background: #f3f4f6; padding: 2px 6px; border-radius: 6px; font-size: 13px; }
+    .badge-online  { background: #d1fae5; color: #065f46; }
+    .badge-offline { background: #fee2e2; color: #991b1b; }
+    .section-sub { background: #f9fafb; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+    .section-warn { background: #fefce8; border: 1px solid #fde68a; border-radius: 10px; padding: 16px; }
+    .inline-status { margin-top: 10px; display: none; }
+    .empty-row td { text-align: center; color: #9ca3af; padding: 32px; }
   </style>
 </head>
 <body>
+
+  <!-- Top bar -->
+  <div class="topbar">
+    <h1>TBI Admin Dashboard</h1>
+    <span class="domain"><%= DOMAIN %></span>
+  </div>
+
+  <!-- Nav tabs -->
+  <div class="nav">
+    <button class="nav-tab active" onclick="switchTab('users')">👥 Users</button>
+    <button class="nav-tab" onclick="switchTab('add-user')">➕ Add User</button>
+    <button class="nav-tab" onclick="switchTab('edit-user')">✏️ Edit User</button>
+    <button class="nav-tab" onclick="switchTab('broadcast')">📣 Broadcast</button>
+    <button class="nav-tab" onclick="switchTab('send-image')">📸 Send Image</button>
+    <button class="nav-tab" onclick="switchTab('bots')">🤖 Bots</button>
+    <button class="nav-tab" onclick="switchTab('marketing')">📊 Marketing</button>
+  </div>
+
   <div class="wrap">
-    <div class="top">
-      <h1>XMPP Admin Dashboard</h1>
-      <span class="pill"><%= DOMAIN %></span>
-    </div>
 
     <% if (typeof msg !== "undefined" && msg) { %>
       <div class="msg"><%= msg %></div>
     <% } %>
-
     <% if (typeof err !== "undefined" && err) { %>
       <div class="err"><%= err %></div>
     <% } %>
 
-    <div class="row">
+    <!-- ══════════════ TAB: USERS ══════════════ -->
+    <div id="tab-users" class="tab-panel active">
       <div class="card">
-        <h2>Users (<%= users.length %>)</h2>
-        <ul class="users">
-          <% users.forEach(u => { %>
-            <li><%= u %>@<%= DOMAIN %></li>
-          <% }) %>
-        </ul>
-        <div class="hint">
-          Users are read from Prosody <code>accounts/*.dat</code> files (no separate database).
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+          <h2 style="margin:0;">👥 Users (<span id="user-count"><%= users.length %></span>)</h2>
+          <button class="btn-blue" onclick="loadUsersTable()">🔄 Refresh</button>
         </div>
-      </div>
 
-      <div class="card actions">
-        <h2>Add user</h2>
-        <form method="post" action="/users/add">
-          <input name="username" placeholder="username (eg: 7550300714)" required />
-          <input name="password" placeholder="password" required />
-          <button type="submit">Create user</button>
-          <div class="hint">Creates <code>username@<%= DOMAIN %></code></div>
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Nickname</th>
+              <th>JID</th>
+              <th>Username</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="users-table-body">
+            <% users.forEach((u, i) => { %>
+              <tr>
+                <td style="color:#9ca3af;"><%= i + 1 %></td>
+                <td><span style="color:#9ca3af; font-style:italic;">—</span></td>
+                <td><code><%= u %>@<%= DOMAIN %></code></td>
+                <td><%= u %></td>
+                <td>
+                  <button class="btn-sm btn-amber" onclick="prefillEdit('<%= u %>')">Edit</button>
+                  <button class="btn-sm btn-red" style="margin-left:4px;" onclick="deleteUser('<%= u %>')">Delete</button>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ══════════════ TAB: ADD USER ══════════════ -->
+    <div id="tab-add-user" class="tab-panel">
+      <div class="card">
+        <h2>➕ Add New User</h2>
+        <form method="post" action="/users/add" class="form-grid">
+          <div>
+            <label>Username</label>
+            <input name="username" placeholder="e.g. 7550300724" required />
+          </div>
+          <div>
+            <label>Password</label>
+            <input name="password" type="password" placeholder="password" required />
+          </div>
+          <div>
+            <label>Nickname (display name in TBI app)</label>
+            <input name="nickname" placeholder="e.g. Niraj Kumar" />
+          </div>
+          <button type="submit" class="btn-green" style="width:fit-content;">➕ Create User</button>
+          <div class="hint">
+            Creates <strong>username@<%= DOMAIN %></strong>. Nickname is optional but recommended — it's what appears in the chat list.
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ══════════════ TAB: EDIT USER ══════════════ -->
+    <div id="tab-edit-user" class="tab-panel">
+
+      <div class="card">
+        <h2>🔑 Reset Password</h2>
+        <form method="post" action="/users/passwd" class="form-grid">
+          <div class="form-row-2">
+            <div>
+              <label>Username</label>
+              <input name="username" id="edit-username-pass" placeholder="e.g. 7550300724" required />
+            </div>
+            <div>
+              <label>New Password</label>
+              <input name="password" type="password" placeholder="new password" required />
+            </div>
+            <button type="submit">Update Password</button>
+          </div>
         </form>
       </div>
 
-      <div class="card actions">
-        <h2>Edit user (reset password)</h2>
-        <form method="post" action="/users/passwd">
-          <input name="username" placeholder="username (eg: niraj)" required />
-          <input name="password" placeholder="new password" required />
-          <button type="submit">Update password</button>
-        </form>
-      </div>
-
-      <div class="card actions">
-        <h2>Delete user</h2>
-        <form method="post" action="/users/delete" onsubmit="return confirm('Delete this user permanently?');">
-          <input name="username" placeholder="username to delete" required />
-          <button class="danger" type="submit">Delete user</button>
-        </form>
-        <div class="hint">This will permanently remove the XMPP account from Prosody.</div>
-      </div>
-
-      <div class="card" style="grid-column: 1 / -1;">
-        <h2>Broadcast message (Bot: <code>broadcast</code>)</h2>
-        <form method="post" action="/broadcast">
-          <textarea name="text" placeholder="Message to send to all users..."></textarea><br/><br/>
-          <button type="submit">Send broadcast</button>
-        </form>
-        <div class="hint">
-          Sends a 1:1 chat message to every user using the bot account.
+      <div class="card">
+        <h2>✏️ Set Nickname</h2>
+        <p class="hint" style="margin-bottom:14px;">Use this when you know the user's current password.</p>
+        <div class="form-row">
+          <div>
+            <label>Username</label>
+            <input id="nick-username" placeholder="e.g. 7550300724" />
+          </div>
+          <div>
+            <label>Current Password</label>
+            <input id="nick-password" type="password" placeholder="user's current password" />
+          </div>
+          <div>
+            <label>Nickname</label>
+            <input id="nick-nickname" placeholder="e.g. Niraj Kumar" />
+          </div>
+          <button class="btn-green" onclick="setNickname()">Set Nickname</button>
         </div>
+        <div id="nick-status" class="inline-status"></div>
       </div>
 
-      <div class="card" style="grid-column: 1 / -1;">
+      <div class="card section-warn">
+        <h2>⚠️ Reset Password &amp; Set Nickname</h2>
+        <p class="hint" style="margin-bottom:14px;">
+          Use when you <strong>don't know</strong> the user's password. This will <strong>change their password</strong> and then set the nickname.
+        </p>
+        <div class="form-row">
+          <div>
+            <label>Username</label>
+            <input id="nick-reset-username" placeholder="e.g. 7550300724" />
+          </div>
+          <div>
+            <label>New Password</label>
+            <input id="nick-reset-password" type="password" placeholder="new password for this user" />
+          </div>
+          <div>
+            <label>Nickname</label>
+            <input id="nick-reset-nickname" placeholder="e.g. Niraj Kumar" />
+          </div>
+          <button class="btn-amber" onclick="setNicknameWithReset()">Reset &amp; Set</button>
+        </div>
+        <div id="nick-reset-status" class="inline-status"></div>
+      </div>
+
+      <div class="card" style="border-color:#fecaca;">
+        <h2 style="color:#b91c1c;">🗑️ Delete User</h2>
+        <form method="post" action="/users/delete" onsubmit="return confirm('Permanently delete this user?');" class="form-grid">
+          <div class="form-row-2">
+            <div>
+              <label>Username</label>
+              <input name="username" id="edit-username-del" placeholder="username to delete" required />
+            </div>
+            <div></div>
+            <button class="btn-red" type="submit">Delete User</button>
+          </div>
+          <div class="hint" style="color:#b91c1c;">This permanently removes the XMPP account from Prosody.</div>
+        </form>
+      </div>
+
+    </div>
+
+    <!-- ══════════════ TAB: BROADCAST ══════════════ -->
+    <div id="tab-broadcast" class="tab-panel">
+      <div class="card">
+        <h2>📣 Broadcast Message</h2>
+        <div class="hint" style="margin-bottom:14px;">Sends a 1:1 chat message to every user via the <code>broadcast</code> bot account.</div>
+        <form method="post" action="/broadcast" class="form-grid">
+          <div>
+            <label>Message</label>
+            <textarea name="text" placeholder="Message to send to all users..."></textarea>
+          </div>
+          <button type="submit" style="width:fit-content;">📣 Send Broadcast</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- ══════════════ TAB: SEND IMAGE ══════════════ -->
+    <div id="tab-send-image" class="tab-panel">
+      <div class="card">
         <h2>📸 Send Image with Caption</h2>
-        <div class="hint" style="margin-bottom: 16px;">
-          Upload and send an image with optional caption to a specific user via the message bot.
-        </div>
-        <form id="send-image-form" style="display: grid; gap: 12px;">
-          <input type="text" id="image-to" placeholder="Recipient JID (e.g., 7550300724@chat.thirupathybright.in)" required />
-          <input type="file" id="image-file" accept="image/*" required style="padding: 8px;" />
-          <input type="text" id="image-caption" placeholder="Caption (optional)" />
-          <button type="submit" style="background: #2563eb;">📤 Send Image</button>
+        <div class="hint" style="margin-bottom:14px;">Upload and send an image with an optional caption to a specific user via the message bot.</div>
+        <form id="send-image-form" class="form-grid">
+          <div>
+            <label>Recipient JID</label>
+            <input type="text" id="image-to" placeholder="e.g. 7550300724@<%= DOMAIN %>" required />
+          </div>
+          <div>
+            <label>Image File</label>
+            <input type="file" id="image-file" accept="image/*" required style="padding:8px;" />
+          </div>
+          <div>
+            <label>Caption (optional)</label>
+            <input type="text" id="image-caption" placeholder="Caption text..." />
+          </div>
+          <button type="submit" class="btn-blue" style="width:fit-content;">📤 Send Image</button>
         </form>
-        <div id="image-status" style="margin-top: 12px; display: none;"></div>
+        <div id="image-status" class="inline-status"></div>
       </div>
+    </div>
 
-      <div class="card" style="grid-column: 1 / -1;">
-        <h2>🤖 AI Assistant (Auto-Reply Bot)</h2>
-        <div class="hint" style="margin-bottom: 16px;">
-          When enabled, the broadcast bot will automatically reply to incoming messages using Sarvam AI.
-          Users can chat with the bot and get intelligent responses powered by AI.
+    <!-- ══════════════ TAB: BOTS ══════════════ -->
+    <div id="tab-bots" class="tab-panel">
+      <div class="card">
+        <h2>🤖 AI Assistant Bot</h2>
+        <div class="hint" style="margin-bottom:16px;">
+          Automatically replies to incoming messages using Sarvam AI.
         </div>
-        <div style="display: flex; gap: 10px; align-items: center;">
-          <form method="post" action="/ai-bot/start" style="display: inline;">
-            <button type="submit" style="background: #059669;">🚀 Start AI Bot</button>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <form method="post" action="/ai-bot/start" style="display:inline;">
+            <button class="btn-green">🚀 Start AI Bot</button>
           </form>
-          <form method="post" action="/ai-bot/stop" style="display: inline;">
-            <button type="submit" class="danger">🛑 Stop AI Bot</button>
+          <form method="post" action="/ai-bot/stop" style="display:inline;">
+            <button class="btn-red">🛑 Stop AI Bot</button>
           </form>
-          <div id="ai-status" style="margin-left: auto;">
-            <span class="pill" style="background: #fef3c7; color: #92400e;">Checking status...</span>
+          <div id="ai-status" style="margin-left:auto;">
+            <span class="pill" style="background:#fef3c7; color:#92400e;">Checking...</span>
           </div>
         </div>
       </div>
 
-      <div class="card" style="grid-column: 1 / -1;">
-        <h2>👥 Marketing Person Assignments (Data Access Control)</h2>
-        <div class="hint" style="margin-bottom: 16px;">
-          Assign marketing persons to users to restrict their data access. Users will only see orders assigned to their marketing person in the AI chatbot.
-          <strong>Security:</strong> This ensures users can only view data relevant to their assigned marketing person.
+      <div class="card">
+        <h2>📨 Message Bot</h2>
+        <div class="hint" style="margin-bottom:16px;">
+          Used for sending API messages and images to specific users.
         </div>
-
-        <div style="margin-bottom: 16px;">
-          <button id="load-marketing-data" onclick="loadMarketingData()" style="background: #2563eb;">📊 Load Marketing Person Data</button>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <form method="post" action="/message-bot/start" style="display:inline;">
+            <button class="btn-green">🚀 Start Message Bot</button>
+          </form>
+          <form method="post" action="/message-bot/stop" style="display:inline;">
+            <button class="btn-red">🛑 Stop Message Bot</button>
+          </form>
+          <div id="msg-bot-status" style="margin-left:auto;">
+            <span class="pill" style="background:#fef3c7; color:#92400e;">Checking...</span>
+          </div>
         </div>
+      </div>
+    </div>
 
-        <div id="marketing-content" style="display: none;">
-          <div style="margin-bottom: 16px; padding: 12px; background: #f3f4f6; border-radius: 10px;">
+    <!-- ══════════════ TAB: MARKETING ══════════════ -->
+    <div id="tab-marketing" class="tab-panel">
+      <div class="card">
+        <h2>📊 Marketing Person Assignments</h2>
+        <div class="hint" style="margin-bottom:16px;">
+          Assign marketing persons to users to restrict their data access. Users will only see orders for their assigned marketing person in the AI chatbot.
+        </div>
+        <button class="btn-blue" onclick="loadMarketingData()">📊 Load Data</button>
+
+        <div id="marketing-content" style="display:none; margin-top:20px;">
+          <div style="margin-bottom:16px; padding:12px; background:#f3f4f6; border-radius:10px;">
             <strong>Available Marketing Persons:</strong>
-            <div id="marketing-persons-list" style="margin-top: 8px; display: flex; flex-wrap: gap; gap: 8px;">
+            <div id="marketing-persons-list" style="margin-top:8px; display:flex; flex-wrap:wrap; gap:8px;">
               <span class="pill">Loading...</span>
             </div>
           </div>
 
-          <table style="width: 100%; border-collapse: collapse; margin-top: 16px;">
+          <table>
             <thead>
-              <tr style="background: #f9fafb; border-bottom: 2px solid #e5e7eb;">
-                <th style="padding: 12px; text-align: left;">User (JID)</th>
-                <th style="padding: 12px; text-align: left;">Assigned Marketing Person</th>
-                <th style="padding: 12px; text-align: center;">Actions</th>
+              <tr>
+                <th>User (JID)</th>
+                <th>Assigned Marketing Person</th>
+                <th style="text-align:center;">Actions</th>
               </tr>
             </thead>
             <tbody id="assignments-table">
-              <tr>
-                <td colspan="3" style="padding: 20px; text-align: center; color: #6b7280;">
-                  Loading assignments...
-                </td>
-              </tr>
+              <tr class="empty-row"><td colspan="3">Loading assignments...</td></tr>
             </tbody>
           </table>
         </div>
       </div>
     </div>
-  </div>
+
+  </div><!-- /wrap -->
 
   <script>
-    // Handle image upload form
+    // ── Tab switching ──
+    function switchTab(name) {
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+      document.getElementById('tab-' + name).classList.add('active');
+      event.currentTarget.classList.add('active');
+    }
+
+    // ── Prefill edit tab from Users table ──
+    function prefillEdit(username) {
+      document.getElementById('edit-username-pass').value = username;
+      document.getElementById('edit-username-del').value = username;
+      document.getElementById('nick-username').value = username;
+      document.getElementById('nick-reset-username').value = username;
+      // Switch to Edit tab
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+      document.getElementById('tab-edit-user').classList.add('active');
+      document.querySelectorAll('.nav-tab')[2].classList.add('active');
+    }
+
+    // ── Delete user from Users table ──
+    function deleteUser(username) {
+      if (!confirm('Permanently delete user "' + username + '"?')) return;
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = '/users/delete';
+      const inp = document.createElement('input');
+      inp.name = 'username'; inp.value = username;
+      form.appendChild(inp);
+      document.body.appendChild(form);
+      form.submit();
+    }
+
+    // ── Load users table with nicknames ──
+    async function loadUsersTable() {
+      const tbody = document.getElementById('users-table-body');
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="5">Loading nicknames...</td></tr>';
+      try {
+        const res = await fetch('/users/list-with-nicknames');
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+
+        document.getElementById('user-count').textContent = data.users.length;
+
+        if (data.users.length === 0) {
+          tbody.innerHTML = '<tr class="empty-row"><td colspan="5">No users found</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = data.users.map((u, i) => `
+          <tr>
+            <td style="color:#9ca3af;">${i + 1}</td>
+            <td>${u.nickname
+              ? `<strong>${escHtml(u.nickname)}</strong>`
+              : `<span style="color:#9ca3af; font-style:italic;">—</span>`
+            }</td>
+            <td><code>${escHtml(u.jid)}</code></td>
+            <td>${escHtml(u.username)}</td>
+            <td>
+              <button class="btn-sm btn-amber" onclick="prefillEdit('${escHtml(u.username)}')">Edit</button>
+              <button class="btn-sm btn-red" style="margin-left:4px;" onclick="deleteUser('${escHtml(u.username)}')">Delete</button>
+            </td>
+          </tr>
+        `).join('');
+      } catch (e) {
+        tbody.innerHTML = `<tr class="empty-row"><td colspan="5" style="color:#b91c1c;">Failed to load: ${e.message}</td></tr>`;
+      }
+    }
+
+    function escHtml(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    // ── Bot status polling ──
+    async function checkBotsStatus() {
+      try {
+        const res = await fetch('/bots/status');
+        const data = await res.json();
+
+        const aiEl = document.getElementById('ai-status');
+        aiEl.innerHTML = data.aiBot.running
+          ? '<span class="pill badge-online">✅ Running</span>'
+          : '<span class="pill badge-offline">⭕ Offline</span>';
+
+        const msgEl = document.getElementById('msg-bot-status');
+        msgEl.innerHTML = data.messageBot.running
+          ? '<span class="pill badge-online">✅ Running</span>'
+          : '<span class="pill badge-offline">⭕ Offline</span>';
+      } catch (_) {}
+    }
+    checkBotsStatus();
+    setInterval(checkBotsStatus, 5000);
+    loadUsersTable();
+
+    // ── Send image ──
     document.getElementById('send-image-form').addEventListener('submit', async (e) => {
       e.preventDefault();
-
       const to = document.getElementById('image-to').value;
       const imageFile = document.getElementById('image-file').files[0];
       const caption = document.getElementById('image-caption').value;
       const statusEl = document.getElementById('image-status');
 
       if (!imageFile) {
-        statusEl.style.display = 'block';
-        statusEl.className = 'err';
-        statusEl.textContent = 'Please select an image file';
-        return;
+        statusEl.style.display = 'block'; statusEl.className = 'err';
+        statusEl.textContent = 'Please select an image file'; return;
       }
 
-      // Show loading
-      statusEl.style.display = 'block';
-      statusEl.className = 'msg';
+      statusEl.style.display = 'block'; statusEl.className = 'msg';
       statusEl.textContent = '📤 Uploading image...';
 
       try {
-        const formData = new FormData();
-        formData.append('to', to);
-        formData.append('image', imageFile);
-        if (caption) {
-          formData.append('caption', caption);
-        }
+        const fd = new FormData();
+        fd.append('to', to); fd.append('image', imageFile);
+        if (caption) fd.append('caption', caption);
 
-        const response = await fetch('/send-image', {
-          method: 'POST',
-          body: formData
-        });
-
-        const data = await response.json();
-
+        const res = await fetch('/send-image', { method: 'POST', body: fd });
+        const data = await res.json();
         if (data.success) {
           statusEl.className = 'msg';
-          statusEl.textContent = `✅ Image sent successfully to ${to}${caption ? ' with caption: "' + caption + '"' : ''}`;
-          // Clear form
+          statusEl.textContent = `✅ Image sent to ${to}${caption ? ' — caption: "' + caption + '"' : ''}`;
           document.getElementById('image-to').value = '';
           document.getElementById('image-file').value = '';
           document.getElementById('image-caption').value = '';
         } else {
           statusEl.className = 'err';
-          statusEl.textContent = `❌ Failed to send image: ${data.error}`;
+          statusEl.textContent = '❌ ' + data.error;
         }
-      } catch (error) {
-        console.error('Error sending image:', error);
+      } catch (err) {
         statusEl.className = 'err';
-        statusEl.textContent = `❌ Error: ${error.message}`;
+        statusEl.textContent = '❌ ' + err.message;
       }
     });
 
-    // Check AI bot status on page load
-    async function checkAIStatus() {
-      try {
-        const response = await fetch('/ai-bot/status');
-        const data = await response.json();
-        const statusEl = document.getElementById('ai-status');
+    // ── Nickname: set with current password ──
+    async function setNickname() {
+      const username = document.getElementById('nick-username').value.trim();
+      const password = document.getElementById('nick-password').value.trim();
+      const nickname = document.getElementById('nick-nickname').value.trim();
+      const statusEl = document.getElementById('nick-status');
 
-        if (data.running) {
-          statusEl.innerHTML = '<span class="pill" style="background: #d1fae5; color: #065f46;">✅ AI Bot Running</span>';
+      if (!username || !password || !nickname) {
+        statusEl.style.display = 'block'; statusEl.className = 'err';
+        statusEl.textContent = 'All fields are required.'; return;
+      }
+      statusEl.style.display = 'block'; statusEl.className = 'msg';
+      statusEl.textContent = '⏳ Setting nickname...';
+
+      try {
+        const res = await fetch('/users/nickname', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password, nickname })
+        });
+        const data = await res.json();
+        if (data.success) {
+          statusEl.className = 'msg'; statusEl.textContent = '✅ ' + data.message;
+          document.getElementById('nick-username').value = '';
+          document.getElementById('nick-password').value = '';
+          document.getElementById('nick-nickname').value = '';
+          loadUsersTable(); // refresh table to show updated nickname
         } else {
-          statusEl.innerHTML = '<span class="pill" style="background: #fee2e2; color: #991b1b;">⭕ AI Bot Offline</span>';
+          statusEl.className = 'err'; statusEl.textContent = '❌ ' + data.error;
         }
-      } catch (error) {
-        console.error('Failed to check AI status:', error);
+      } catch (e) {
+        statusEl.className = 'err'; statusEl.textContent = '❌ ' + e.message;
       }
     }
 
-    // Check status on load and every 5 seconds
-    checkAIStatus();
-    setInterval(checkAIStatus, 5000);
+    // ── Nickname: reset password + set nickname ──
+    async function setNicknameWithReset() {
+      const username = document.getElementById('nick-reset-username').value.trim();
+      const newPassword = document.getElementById('nick-reset-password').value.trim();
+      const nickname = document.getElementById('nick-reset-nickname').value.trim();
+      const statusEl = document.getElementById('nick-reset-status');
 
-    // Marketing Person Management
-    let marketingPersons = [];
-    let assignments = {};
-    let users = [];
+      if (!username || !newPassword || !nickname) {
+        statusEl.style.display = 'block'; statusEl.className = 'err';
+        statusEl.textContent = 'All fields are required.'; return;
+      }
+      if (!confirm(`Change password for "${username}" and set nickname to "${nickname}"?`)) return;
+
+      statusEl.style.display = 'block'; statusEl.className = 'msg';
+      statusEl.textContent = '⏳ Resetting password and setting nickname...';
+
+      try {
+        const res = await fetch('/users/nickname/with-reset', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, newPassword, nickname })
+        });
+        const data = await res.json();
+        if (data.success) {
+          statusEl.className = 'msg'; statusEl.textContent = '✅ ' + data.message;
+          document.getElementById('nick-reset-username').value = '';
+          document.getElementById('nick-reset-password').value = '';
+          document.getElementById('nick-reset-nickname').value = '';
+          loadUsersTable(); // refresh table to show updated nickname
+        } else {
+          statusEl.className = 'err'; statusEl.textContent = '❌ ' + data.error;
+        }
+      } catch (e) {
+        statusEl.className = 'err'; statusEl.textContent = '❌ ' + e.message;
+      }
+    }
+
+    // ── Marketing ──
+    let marketingPersons = [], assignments = {}, mpUsers = [];
 
     async function loadMarketingData() {
+      document.getElementById('marketing-content').style.display = 'block';
       try {
-        document.getElementById('marketing-content').style.display = 'block';
+        const [mpRes, assignRes] = await Promise.all([
+          fetch('/marketing-persons'),
+          fetch('/marketing-persons/assignments')
+        ]);
+        const mpData = await mpRes.json();
+        const assignData = await assignRes.json();
 
-        // Fetch marketing persons from database
-        const mpResponse = await fetch('/marketing-persons');
-        const mpData = await mpResponse.json();
-
-        if (mpData.success) {
-          marketingPersons = mpData.marketingPersons;
-          displayMarketingPersons();
-        }
-
-        // Fetch assignments
-        const assignResponse = await fetch('/marketing-persons/assignments');
-        const assignData = await assignResponse.json();
-
+        if (mpData.success) { marketingPersons = mpData.marketingPersons; displayMarketingPersons(); }
         if (assignData.success) {
           assignments = assignData.assignments;
-          users = assignData.users;
+          mpUsers = assignData.users;
           displayAssignments();
         }
-      } catch (error) {
-        console.error('Failed to load marketing data:', error);
-        alert('Failed to load marketing person data');
-      }
+      } catch (e) { alert('Failed to load: ' + e.message); }
     }
 
     function displayMarketingPersons() {
-      const listEl = document.getElementById('marketing-persons-list');
-
-      if (marketingPersons.length === 0) {
-        listEl.innerHTML = '<span class="pill" style="background: #fee2e2; color: #991b1b;">No marketing persons found in database</span>';
-      } else {
-        listEl.innerHTML = marketingPersons.map(mp =>
-          `<span class="pill" style="background: #dbeafe; color: #1e40af;">${mp}</span>`
-        ).join(' ');
-      }
+      const el = document.getElementById('marketing-persons-list');
+      el.innerHTML = marketingPersons.length === 0
+        ? '<span class="pill badge-offline">No marketing persons found</span>'
+        : marketingPersons.map(mp => `<span class="pill" style="background:#dbeafe;color:#1e40af;">${mp}</span>`).join('');
     }
 
     function displayAssignments() {
-      const tableEl = document.getElementById('assignments-table');
-
-      if (users.length === 0) {
-        tableEl.innerHTML = `
-          <tr>
-            <td colspan="3" style="padding: 20px; text-align: center; color: #6b7280;">
-              No users found
-            </td>
-          </tr>
-        `;
-        return;
+      const tbody = document.getElementById('assignments-table');
+      if (mpUsers.length === 0) {
+        tbody.innerHTML = '<tr class="empty-row"><td colspan="3">No users found</td></tr>'; return;
       }
-
-      tableEl.innerHTML = users.map(userJid => {
-        const assignedMPs = assignments[userJid] || [];
-        // Handle backward compatibility - convert string to array
-        const assignedArray = Array.isArray(assignedMPs) ? assignedMPs : (assignedMPs ? [assignedMPs] : []);
-
+      tbody.innerHTML = mpUsers.map(userJid => {
+        const assigned = assignments[userJid] || [];
+        const arr = Array.isArray(assigned) ? assigned : (assigned ? [assigned] : []);
+        const safeId = userJid.replace(/[@.]/g, '_');
         return `
-          <tr style="border-bottom: 1px solid #e5e7eb;">
-            <td style="padding: 12px;">
-              <code style="font-size: 13px;">${userJid}</code>
-            </td>
-            <td style="padding: 12px;">
-              <select id="mp-select-${userJid.replace(/[@.]/g, '_')}"
-                      multiple
-                      size="5"
-                      style="width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #d1d5db;"
+          <tr>
+            <td><code>${userJid}</code></td>
+            <td>
+              <select id="mp-select-${safeId}" multiple size="4"
+                      style="width:100%; padding:6px; border-radius:6px; border:1px solid #d1d5db;"
                       onchange="handleSelectionChange('${userJid}')">
                 ${marketingPersons.map(mp =>
-                  `<option value="${mp}" ${assignedArray.includes(mp) ? 'selected' : ''}>${mp}</option>`
+                  `<option value="${mp}" ${arr.includes(mp) ? 'selected' : ''}>${mp}</option>`
                 ).join('')}
               </select>
-              <div style="font-size: 11px; color: #6b7280; margin-top: 4px;">
-                Hold Ctrl/Cmd to select multiple
-              </div>
+              <div class="hint">Hold Ctrl/Cmd to select multiple</div>
             </td>
-            <td style="padding: 12px; text-align: center;">
-              ${assignedArray.length > 0 ? `
-                <div style="margin-bottom: 8px;">
-                  ${assignedArray.map(mp =>
-                    `<span class="pill" style="background: #dbeafe; color: #1e40af; font-size: 11px; margin: 2px; display: inline-block;">${mp}</span>`
-                  ).join('')}
-                </div>
-                <button onclick="removeAssignment('${userJid}')"
-                        style="padding: 6px 12px; font-size: 13px; background: #dc2626;">
-                  Remove All
-                </button>
-              ` : `
-                <span style="color: #9ca3af; font-size: 13px;">No assignment</span>
-              `}
+            <td style="text-align:center;">
+              ${arr.length > 0
+                ? `<div style="margin-bottom:6px;">${arr.map(mp =>
+                    `<span class="pill" style="background:#dbeafe;color:#1e40af;font-size:11px;margin:2px;">${mp}</span>`
+                  ).join('')}</div>
+                  <button class="btn-sm btn-red" onclick="removeAssignment('${userJid}')">Remove All</button>`
+                : `<span style="color:#9ca3af;font-size:13px;">No assignment</span>`
+              }
             </td>
-          </tr>
-        `;
+          </tr>`;
       }).join('');
     }
 
     function handleSelectionChange(userJid) {
-      const selectId = `mp-select-${userJid.replace(/[@.]/g, '_')}`;
-      const selectEl = document.getElementById(selectId);
-      const selectedOptions = Array.from(selectEl.selectedOptions).map(opt => opt.value);
-
-      if (selectedOptions.length > 0) {
-        assignMarketingPersons(userJid, selectedOptions);
-      }
+      const sel = document.getElementById('mp-select-' + userJid.replace(/[@.]/g, '_'));
+      const selected = Array.from(sel.selectedOptions).map(o => o.value);
+      if (selected.length > 0) assignMarketingPersons(userJid, selected);
     }
 
-    async function assignMarketingPersons(userJid, marketingPersons) {
+    async function assignMarketingPersons(userJid, persons) {
       try {
-        const response = await fetch('/marketing-persons/assign', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userJid, marketingPersons })
+        const res = await fetch('/marketing-persons/assign', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userJid, marketingPersons: persons })
         });
-
-        const data = await response.json();
-
-        if (data.success) {
-          assignments[userJid] = marketingPersons;
-          displayAssignments();
-          const mpList = marketingPersons.join(', ');
-          alert(`✅ Assigned ${mpList} to ${userJid}`);
-        } else {
-          alert('Failed to assign: ' + data.error);
-        }
-      } catch (error) {
-        console.error('Failed to assign:', error);
-        alert('Failed to assign marketing persons');
-      }
+        const data = await res.json();
+        if (data.success) { assignments[userJid] = persons; displayAssignments(); }
+        else alert('Failed: ' + data.error);
+      } catch (e) { alert('Failed: ' + e.message); }
     }
 
     async function removeAssignment(userJid) {
-      if (!confirm(`Remove marketing person assignment for ${userJid}?`)) {
-        return;
-      }
-
+      if (!confirm('Remove marketing person assignment for ' + userJid + '?')) return;
       try {
-        const response = await fetch('/marketing-persons/remove', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        const res = await fetch('/marketing-persons/remove', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ userJid })
         });
-
-        const data = await response.json();
-
-        if (data.success) {
-          delete assignments[userJid];
-          displayAssignments();
-          alert(`✅ Removed assignment for ${userJid}`);
-        } else {
-          alert('Failed to remove: ' + data.message);
-        }
-      } catch (error) {
-        console.error('Failed to remove:', error);
-        alert('Failed to remove assignment');
-      }
+        const data = await res.json();
+        if (data.success) { delete assignments[userJid]; displayAssignments(); }
+        else alert('Failed: ' + data.message);
+      } catch (e) { alert('Failed: ' + e.message); }
     }
   </script>
 </body>
 </html>
-
