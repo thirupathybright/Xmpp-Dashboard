@@ -278,11 +278,25 @@
     <div id="tab-send-image" class="tab-panel">
       <div class="card">
         <h2>📸 Send Image with Caption</h2>
-        <div class="hint" style="margin-bottom:14px;">Upload and send an image with an optional caption to a specific user via the message bot.</div>
+        <div class="hint" style="margin-bottom:14px;">Upload and send an image with an optional caption via the message bot.</div>
         <form id="send-image-form" class="form-grid">
           <div>
-            <label>Recipient JID</label>
+            <label>Message Type</label>
+            <div style="display:flex; gap:12px; margin-top:4px;">
+              <label style="display:flex; align-items:center; gap:6px; font-size:14px; color:#111827; margin-bottom:0; cursor:pointer;">
+                <input type="radio" name="image-type" id="image-type-individual" value="individual" checked style="width:auto; padding:0;" />
+                Individual (1:1 chat)
+              </label>
+              <label style="display:flex; align-items:center; gap:6px; font-size:14px; color:#111827; margin-bottom:0; cursor:pointer;">
+                <input type="radio" name="image-type" id="image-type-group" value="group" style="width:auto; padding:0;" />
+                Group (MUC)
+              </label>
+            </div>
+          </div>
+          <div>
+            <label id="image-to-label">Recipient JID</label>
             <input type="text" id="image-to" placeholder="e.g. 7550300724@<%= DOMAIN %>" required />
+            <div class="hint" id="image-to-hint">Full JID of the individual user</div>
           </div>
           <div>
             <label>Image File</label>
@@ -468,12 +482,27 @@
     setInterval(checkBotsStatus, 5000);
     loadUsersTable();
 
+    // ── Send image: update placeholder based on type ──
+    document.querySelectorAll('input[name="image-type"]').forEach(radio => {
+      radio.addEventListener('change', () => {
+        const isGroup = document.getElementById('image-type-group').checked;
+        document.getElementById('image-to-label').textContent = isGroup ? 'Group JID' : 'Recipient JID';
+        document.getElementById('image-to').placeholder = isGroup
+          ? 'e.g. groupname@conference.<%= DOMAIN %>'
+          : 'e.g. 7550300724@<%= DOMAIN %>';
+        document.getElementById('image-to-hint').textContent = isGroup
+          ? 'Full JID of the MUC group room'
+          : 'Full JID of the individual user';
+      });
+    });
+
     // ── Send image ──
     document.getElementById('send-image-form').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const to = document.getElementById('image-to').value;
+      const to = document.getElementById('image-to').value.trim();
       const imageFile = document.getElementById('image-file').files[0];
       const caption = document.getElementById('image-caption').value;
+      const isGroup = document.getElementById('image-type-group').checked;
       const statusEl = document.getElementById('image-status');
 
       if (!imageFile) {
@@ -486,7 +515,9 @@
 
       try {
         const fd = new FormData();
-        fd.append('to', to); fd.append('image', imageFile);
+        fd.append('to', to);
+        fd.append('image', imageFile);
+        fd.append('messageType', isGroup ? 'groupchat' : 'chat');
         if (caption) fd.append('caption', caption);
 
         const res = await fetch('/send-image', { method: 'POST', body: fd });

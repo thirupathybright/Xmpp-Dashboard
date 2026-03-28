@@ -141,14 +141,59 @@ async function sendMessageToUser(toJid, messageText) {
   }
 }
 
-// Send image with caption to specific user
-async function sendImageWithCaption(toJid, imageUrl, imageSize, caption = "") {
+// Join a MUC room and wait for join confirmation
+async function joinMucRoom(roomJid) {
+  const nickname = MSG_BOT_USERNAME;
+  const roomWithNick = `${roomJid}/${nickname}`;
+
+  console.log(`🚪 [MUC] Joining room ${roomJid} as ${nickname}`);
+
+  await new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      messageBot.removeListener("stanza", onPresence);
+      // Some servers don't send confirmation; proceed anyway
+      console.warn(`⚠️ [MUC] Join confirmation timeout for ${roomJid}, proceeding anyway`);
+      resolve();
+    }, 4000);
+
+    function onPresence(stanza) {
+      if (
+        stanza.is("presence") &&
+        stanza.attrs.from &&
+        stanza.attrs.from.startsWith(roomJid + "/")
+      ) {
+        clearTimeout(timeout);
+        messageBot.removeListener("stanza", onPresence);
+        console.log(`✅ [MUC] Joined room ${roomJid}`);
+        resolve();
+      }
+    }
+
+    messageBot.on("stanza", onPresence);
+    messageBot.send(
+      xml("presence", { to: roomWithNick },
+        xml("x", { xmlns: "http://jabber.org/protocol/muc" })
+      )
+    );
+  });
+}
+
+// Leave a MUC room
+async function leaveMucRoom(roomJid) {
+  const roomWithNick = `${roomJid}/${MSG_BOT_USERNAME}`;
+  await messageBot.send(xml("presence", { to: roomWithNick, type: "unavailable" }));
+  console.log(`🚪 [MUC] Left room ${roomJid}`);
+}
+
+// Send image with caption to specific user or group
+async function sendImageWithCaption(toJid, imageUrl, imageSize, caption = "", messageType = "chat") {
   try {
     if (!messageBot) {
       throw new Error("Message Bot is not running. Please start the bot first.");
     }
 
-    console.log(`📤 [MESSAGE BOT] Sending image with caption to ${toJid}`);
+    const type = messageType === "groupchat" ? "groupchat" : "chat";
+    console.log(`📤 [MESSAGE BOT] Sending image with caption to ${toJid} (type: ${type})`);
     console.log(`📤 [MESSAGE BOT] Image URL: ${imageUrl}`);
     console.log(`📤 [MESSAGE BOT] Caption: ${caption}`);
 
@@ -168,16 +213,27 @@ async function sendImageWithCaption(toJid, imageUrl, imageSize, caption = "") {
     console.log(`📤 [MESSAGE BOT] Message body: ${messageBody}`);
     console.log(`📤 [MESSAGE BOT] OOB URL: ${imageUrl}`);
 
+    // For group messages, join the room first
+    if (type === "groupchat") {
+      await joinMucRoom(toJid);
+    }
+
     // Send single message with body and OOB
     // OOB always contains just the download URL
     const message = xml(
       "message",
-      { type: "chat", to: toJid },
+      { type, to: toJid },
       xml("body", {}, messageBody),
       xml("x", { xmlns: "jabber:x:oob" }, xml("url", {}, imageUrl))
     );
 
     await messageBot.send(message);
+
+    // Leave the room after sending — wait briefly for server to process/deliver
+    if (type === "groupchat") {
+      await new Promise(r => setTimeout(r, 1500));
+      await leaveMucRoom(toJid);
+    }
 
     console.log(`✅ [MESSAGE BOT] Image with caption sent successfully to ${toJid}`);
     return { success: true };
@@ -840,7 +896,7 @@ app.post("/broadcast", async (req, res) => {
  */
 app.post("/send-image", upload.single("image"), async (req, res) => {
   try {
-    const { to, caption } = req.body;
+    const { to, caption, messageType } = req.body;
     const imageFile = req.file;
 
     if (!to || !imageFile) {
@@ -866,6 +922,8 @@ app.post("/send-image", upload.single("image"), async (req, res) => {
       });
     }
 
+    const type = messageType === "groupchat" ? "groupchat" : "chat";
+
     // Upload file to XMPP HTTP upload service
     console.log(`📤 Uploading ${imageFile.originalname} (${imageFile.size} bytes, ${imageFile.mimetype})`);
     const uploadResult = await uploadFileToXMPP(imageFile.buffer, imageFile.originalname, imageFile.mimetype);
@@ -878,7 +936,7 @@ app.post("/send-image", upload.single("image"), async (req, res) => {
     }
 
     // Send image with caption
-    const sendResult = await sendImageWithCaption(to, uploadResult.url, uploadResult.size, caption || "");
+    const sendResult = await sendImageWithCaption(to, uploadResult.url, uploadResult.size, caption || "", type);
 
     if (sendResult.success) {
       res.json({
