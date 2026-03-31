@@ -587,14 +587,34 @@ async function startAIBot() {
           // Convert markdown formatting to plain text for XMPP chat
           const plainResponse = markdownToPlainText(aiResponse);
 
-          // Send AI response back to user
-          await aiBot.send(
-            xml(
-              "message",
-              { type: "chat", to: senderJid },
-              xml("body", {}, plainResponse)
-            )
-          );
+          // Split large responses into chunks to avoid XMPP stanza size limits
+          const MAX_CHUNK = 3000;
+          if (plainResponse.length <= MAX_CHUNK) {
+            await aiBot.send(
+              xml("message", { type: "chat", to: senderJid }, xml("body", {}, plainResponse))
+            );
+          } else {
+            // Split on double-newline (record boundaries) to keep items intact
+            const lines = plainResponse.split('\n');
+            let chunk = '';
+            let chunkIndex = 0;
+            for (const line of lines) {
+              if (chunk.length + line.length + 1 > MAX_CHUNK) {
+                await aiBot.send(
+                  xml("message", { type: "chat", to: senderJid }, xml("body", {}, chunk.trim()))
+                );
+                chunkIndex++;
+                chunk = line + '\n';
+              } else {
+                chunk += line + '\n';
+              }
+            }
+            if (chunk.trim()) {
+              await aiBot.send(
+                xml("message", { type: "chat", to: senderJid }, xml("body", {}, chunk.trim()))
+              );
+            }
+          }
 
           console.log(`✅ AI response sent to ${senderJid}`);
         } catch (error) {

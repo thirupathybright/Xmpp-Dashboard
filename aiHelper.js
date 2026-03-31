@@ -267,8 +267,9 @@ How can I help you today?`;
     const data = await response.json();
     console.log('✅ Sarvam AI Response received');
 
-    // Extract AI response
-    const aiMessage = data.choices?.[0]?.message?.content || 'Sorry, I could not generate a response.';
+    // Extract AI response and strip <think>...</think> blocks (chain-of-thought reasoning)
+    const rawMessage = data.choices?.[0]?.message?.content || 'Sorry, I could not generate a response.';
+    const aiMessage = rawMessage.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
     // Add AI response to history
     history.push({

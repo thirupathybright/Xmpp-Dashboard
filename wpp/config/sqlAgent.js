@@ -262,6 +262,77 @@ class SQLAgent {
         };
       }
 
+      // ── RM Tank pending fast-path ──
+      // Triggers on: "rm tank", "rm tank pending", "available tripsheet", "loading pending",
+      // "tripsheet pending loading", "rm pending", "rm available" etc.
+      const isRmTankQuery =
+        /\brm\s*tank\b/i.test(userQuestion) ||
+        /\brm\s*(pending|available)\b/i.test(userQuestion) ||
+        /\bavailable\s*tripsheet\b/i.test(userQuestion) ||
+        /\btripsheet\s*(pending|available)\b/i.test(userQuestion) ||
+        /\bpending\s*(rm|raw\s*material|loading)\b/i.test(userQuestion) ||
+        /\bloading\s*pending\b/i.test(userQuestion);
+
+      if (isRmTankQuery) {
+        console.log(`⚡ RM Tank pending fast-path triggered`);
+
+        const rmTankSQL = `
+SELECT
+    ts.tripsheetno                                      AS tripsheet_number,
+    CONCAT(
+        gr.name, '-',
+        cond.name, '-',
+        sh.name, '-',
+        sz.name
+    )                                                   AS raw_sku,
+    prod.quantity_kg                                    AS qty,
+    cust.customer_name                                  AS customer_name
+FROM thirupathybright.Database_tripsheet ts
+INNER JOIN thirupathybright.Database_production prod
+    ON ts.production_reference_id = prod.id
+LEFT JOIN thirupathybright.Database_productionapproval pa
+    ON pa.production_id = prod.id
+INNER JOIN thirupathybright.mastercustomer cust
+    ON prod.customer_id = cust.id
+INNER JOIN thirupathybright.Database_grade gr
+    ON prod.grade_id = gr.id
+INNER JOIN thirupathybright.Database_condition cond
+    ON prod.condition_id = cond.id
+INNER JOIN thirupathybright.Database_shape sh
+    ON prod.shape_id = sh.id
+INNER JOIN thirupathybright.Database_size sz
+    ON prod.raw_metal_size_id = sz.id
+WHERE ts.status = 'completed'
+  AND ts.id NOT IN (
+      SELECT ls.tripsheetno_id
+      FROM thirupathybright.Database_loadingsupervisor ls
+      WHERE ls.status != 'pending'
+  )
+ORDER BY ts.created_at DESC`.trim();
+
+        const rmResult = await this.executeQuery(rmTankSQL);
+
+        if (!rmResult.success) {
+          return {
+            success: false,
+            query: rmTankSQL,
+            data: [],
+            count: 0,
+            error: rmResult.error,
+            _directReply: `Unable to fetch RM tank pending data. Please try again.`
+          };
+        }
+
+        return {
+          success: true,
+          query: rmTankSQL,
+          data: rmResult.rows,
+          count: rmResult.count,
+          error: null,
+          _isRmTankQuery: true
+        };
+      }
+
       // ── Tripsheet number fast-path (e.g. "TS-2602-001 production plan") ──
       // Also handles "tripsheet production pending" — queries production via tripsheet join.
       const tsnoMatch = userQuestion.match(/\b(TS[-\s]\d{4}[-\s]\d+)\b/i);
@@ -861,6 +932,34 @@ COMMON QUERIES:
 
       out += '─'.repeat(30) + '\n';
       out += `Total Qty : ${totalQty.toLocaleString()} kg\n`;
+
+      return `\n\n[DIRECT_REPLY:\n${out}]`;
+    }
+
+    // ── RM Tank pending results ──
+    const isRmTankResult = result._isRmTankQuery || (data[0] && data[0].tripsheet_number !== undefined && data[0].raw_sku !== undefined);
+
+    if (isRmTankResult) {
+      if (result.count === 0) {
+        return `\n\n[DIRECT_REPLY:\nNo pending RM tank items found.\nAll approved tripsheets have been loaded.]`;
+      }
+
+      let totalQty = 0;
+      data.forEach(r => { totalQty += parseFloat(r.qty || 0); });
+
+      let out = `RM Tank Pending (${result.count} item(s)):\n`;
+      out += '─'.repeat(40) + '\n\n';
+
+      data.forEach((r, i) => {
+        out += `${i + 1}. Tripsheet : ${r.tripsheet_number || 'N/A'}\n`;
+        out += `   Customer  : ${r.customer_name || 'N/A'}\n`;
+        out += `   Raw SKU   : ${r.raw_sku || 'N/A'}\n`;
+        out += `   Qty (kg)  : ${Number(r.qty || 0).toLocaleString()}\n`;
+        out += '\n';
+      });
+
+      out += '─'.repeat(40) + '\n';
+      out += `Total Pending Qty : ${totalQty.toLocaleString()} kg\n`;
 
       return `\n\n[DIRECT_REPLY:\n${out}]`;
     }
