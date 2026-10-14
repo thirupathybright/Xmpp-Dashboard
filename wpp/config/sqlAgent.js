@@ -1,6 +1,7 @@
-// SQL Agent using LangChain for Natural Language to SQL
+// SQL Agent using Claude Code CLI for Natural Language to SQL
 const mysql = require('mysql2/promise');
 const DATABASES = require('./sqlAuthenticator');
+const { askClaude } = require('../../claudeClient');
 
 // Create connection pool
 let pool = null;
@@ -684,28 +685,9 @@ Return ONLY valid SQL query, nothing else. No explanations, no markdown, just SQ
 
       const userPrompt = `Generate SQL query for: ${userQuestion}`;
 
-      // Call Sarvam AI
-      const response = await fetch(apiConfig.API_URL, {
-        method: 'POST',
-        headers: {
-          'api-subscription-key': apiConfig.API_KEY,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: apiConfig.MODEL,
-          messages: [
-            { role: 'user', content: systemPrompt + '\n\n' + userPrompt }
-          ]
-        })
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`AI API error: ${response.status} - ${errorText}`);
-      }
-
-      const data = await response.json();
-      let sqlQuery = data.choices?.[0]?.message?.content?.trim();
+      // Call Claude Code CLI to generate the SQL
+      const rawSql = await askClaude(systemPrompt + '\n\n' + userPrompt);
+      let sqlQuery = rawSql ? rawSql.trim() : '';
 
       if (!sqlQuery) {
         throw new Error('No SQL query generated');

@@ -407,6 +407,56 @@
               </button>
             </div>
           </div>
+
+          <!-- Send Direct Message by JID -->
+        <div class="card mt-3">
+          <div class="card-body">
+            <h4 class="mb-3"><i class="fas fa-user me-2"></i>Send Direct Message by JID</h4>
+            <div class="alert alert-secondary">
+              <i class="fas fa-info-circle me-2"></i>
+              Send a text message directly to an individual (<code>91XXXXXXXXXX@c.us</code>) or a group (<code>GROUPID@g.us</code>) using the exact JID.
+            </div>
+            <div class="mb-3">
+              <label for="directJid" class="form-label">JID</label>
+              <input type="text" class="form-control" id="directJid" placeholder="919876543210@c.us or 120363402588994104@g.us">
+              <small class="text-muted">Individual: <code>number@c.us</code> &nbsp;|&nbsp; Group: <code>groupid@g.us</code></small>
+            </div>
+            <div class="mb-3">
+              <label for="directMessage" class="form-label">Message</label>
+              <textarea class="form-control" id="directMessage" rows="3" placeholder="Enter your message..."></textarea>
+            </div>
+            <button onclick="sendDirectMessage()" class="btn btn-whatsapp">
+              <i class="fas fa-paper-plane me-2"></i> Send Direct Message
+            </button>
+          </div>
+        </div>
+
+        <!-- Send Image with Caption -->
+        <div class="card mt-3">
+          <div class="card-body">
+            <h4 class="mb-3"><i class="fas fa-image me-2"></i>Send Image with Caption</h4>
+            <div class="alert alert-secondary">
+              <i class="fas fa-info-circle me-2"></i>
+              Send an image to an individual (<code>91XXXXXXXXXX@c.us</code>) or a group (<code>GROUPID@g.us</code>).
+            </div>
+            <div class="mb-3">
+              <label for="imageJid" class="form-label">JID</label>
+              <input type="text" class="form-control" id="imageJid" placeholder="919876543210@c.us or 120363402588994104@g.us">
+              <small class="text-muted">Individual: <code>number@c.us</code> &nbsp;|&nbsp; Group: <code>groupid@g.us</code></small>
+            </div>
+            <div class="mb-3">
+              <label for="imageFile" class="form-label">Image</label>
+              <input type="file" class="form-control" id="imageFile" accept="image/*">
+            </div>
+            <div class="mb-3">
+              <label for="imageCaption" class="form-label">Caption <span class="text-muted">(optional)</span></label>
+              <textarea class="form-control" id="imageCaption" rows="2" placeholder="Enter caption..."></textarea>
+            </div>
+            <button onclick="sendImageWithCaption()" class="btn btn-whatsapp">
+              <i class="fas fa-image me-2"></i> Send Image
+            </button>
+          </div>
+        </div>
         </div>
 
         <!-- Queue Status Tab -->
@@ -1122,6 +1172,69 @@
       }
     }
     
+    // Send Direct Message by JID
+    async function sendDirectMessage() {
+      const jid = document.getElementById('directJid').value.trim();
+      const message = document.getElementById('directMessage').value.trim();
+      if (!jid || !message) {
+        showToast('Please enter a JID and message', 'warning');
+        return;
+      }
+      try {
+        showToast('Sending message...', 'info');
+        const res = await fetch('/send-direct', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jid, message })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          showToast('Message sent successfully!', 'success');
+          document.getElementById('directJid').value = '';
+          document.getElementById('directMessage').value = '';
+        } else {
+          showToast(data.message || 'Failed to send message', 'danger');
+        }
+      } catch (error) {
+        showToast('Error sending message', 'danger');
+        console.error(error);
+      }
+    }
+
+    // Send Image with Caption
+    async function sendImageWithCaption() {
+      const jid = document.getElementById('imageJid').value.trim();
+      const caption = document.getElementById('imageCaption').value.trim();
+      const fileInput = document.getElementById('imageFile');
+      if (!jid || !fileInput.files[0]) {
+        showToast('Please enter a JID and select an image', 'warning');
+        return;
+      }
+      try {
+        showToast('Sending image...', 'info');
+        const formData = new FormData();
+        formData.append('jid', jid);
+        formData.append('caption', caption);
+        formData.append('image', fileInput.files[0]);
+        const res = await fetch('/send-image', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          showToast('Image sent successfully!', 'success');
+          document.getElementById('imageJid').value = '';
+          document.getElementById('imageCaption').value = '';
+          fileInput.value = '';
+        } else {
+          showToast(data.message || 'Failed to send image', 'danger');
+        }
+      } catch (error) {
+        showToast('Error sending image', 'danger');
+        console.error(error);
+      }
+    }
+
     // Helper functions
     function copyToClipboard(text) {
       navigator.clipboard.writeText(text).then(() => {

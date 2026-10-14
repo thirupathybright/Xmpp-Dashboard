@@ -1,4 +1,6 @@
+require("dotenv").config();
 const express = require("express");
+const session = require("express-session");
 const fs = require("fs");
 const { execFileSync } = require("child_process");
 const { client, xml } = require("@xmpp/client");
@@ -9,11 +11,85 @@ const multer = require("multer");
 const axios = require("axios");
 const FormData = require("form-data");
 const crypto = require("crypto");
+const { ensureAdminAccount, verifyLogin, requireLogin } = require("./auth");
+const ProsodyStats = require("./prosodyStats");
+const createWebChat = require("./webchat");
+
+ensureAdminAccount();
 
 const app = express();
+app.set("trust proxy", 1); // behind nginx: real client IP for login rate limiting
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json()); // Add JSON body parser for API endpoints
 app.set("view engine", "ejs");
+
+app.use(session({
+  secret: process.env.DASHBOARD_SESSION_SECRET || crypto.randomBytes(32).toString("hex"),
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    sameSite: "lax",
+    maxAge: 12 * 60 * 60 * 1000, // 12 hours
+  },
+}));
+
+// ---- auth routes (must be registered before requireLogin) ----
+app.get("/login", (req, res) => {
+  if (req.session && req.session.authenticated) {
+    return res.redirect(req.session.role === "user" ? "/chat" : "/");
+  }
+  res.render("login", { err: null, tab: req.query.tab === "user" ? "user" : "admin" });
+});
+
+app.post("/login", async (req, res) => {
+  const { role, email, username, password } = req.body;
+
+  // Sign in as User: verified against Prosody with the XMPP account itself.
+  if (role === "user") {
+    try {
+      const xmppUser = await webchat.login(username, password, req.ip);
+      return req.session.regenerate((err) => {
+        if (err) return res.status(500).render("login", { err: "Login failed.", tab: "user" });
+        req.session.authenticated = true;
+        req.session.role = "user";
+        req.session.xmppUser = xmppUser;
+        res.redirect("/chat");
+      });
+    } catch (e) {
+      return res.status(e.status || 500).render("login", { err: e.message, tab: "user" });
+    }
+  }
+
+  // Sign in as Admin: existing dashboard account.
+  if (verifyLogin(email, password)) {
+    return req.session.regenerate((err) => {
+      if (err) return res.status(500).render("login", { err: "Login failed.", tab: "admin" });
+      req.session.authenticated = true;
+      req.session.role = "admin";
+      req.session.email = email;
+      res.redirect("/");
+    });
+  }
+  res.status(401).render("login", { err: "Invalid email or password.", tab: "admin" });
+});
+
+app.post("/logout", (req, res) => {
+  const xmppUser = req.session && req.session.role === "user" ? req.session.xmppUser : null;
+  if (xmppUser) webchat.logout(xmppUser);
+  req.session.destroy(() => res.redirect("/login"));
+});
+
+app.use(requireLogin);
+
+// ---- web chat for regular XMPP users (WhatsApp-Web style) ----
+// webchat is created lazily below once helpers exist; routes are mounted here
+// so the auth middleware order stays: login routes -> requireLogin -> app routes.
+app.use("/api/chat", (req, res, next) => webchat.router(req, res, next));
+app.get("/chat", (req, res) => {
+  if (!req.session || req.session.role !== "user") return res.redirect("/");
+  res.sendFile(`${__dirname}/public/chat.html`);
+});
 
 // Configure multer for file uploads
 const upload = multer({ storage: multer.memoryStorage() });
@@ -55,26 +131,52 @@ function listUsers() {
     .sort();
 }
 
-function runProsodyctlWithPassword(command, jid, newPassword) {
-  // prosodyctl adduser/passwd reads password from stdin (twice)
-  // We'll pipe "pass\npass\n" using /bin/sh -lc to keep it simple.
-  const shCmd = `printf '%s\n%s\n' '${newPassword.replace(
-    /'/g,
-    "'\\''"
-  )}' '${newPassword.replace(/'/g, "'\\''")}' | sudo -n prosodyctl ${command} '${jid.replace(
-    /'/g,
-    "'\\''"
-  )}'`;
+function buildExecError(err) {
+  let msg = err?.message || String(err);
+  if (err?.stderr) msg += `\n${err.stderr.toString().trim()}`;
+  if (err?.stdout) msg += `\n${err.stdout.toString().trim()}`;
+  return msg;
+}
 
-  // execFileSync("sh", ["-lc", shCmd]) gives us stdout/stderr
-  return execFileSync("sh", ["-lc", shCmd], { encoding: "utf8" });
+function runProsodyctlWithPassword(command, jid, newPassword) {
+  const input = `${newPassword}\n${newPassword}\n`;
+  try {
+    return execFileSync("sudo", ["-n", "prosodyctl", command, jid], {
+      input,
+      encoding: "utf8",
+    });
+  } catch (sudoErr) {
+    const sudoMessage = buildExecError(sudoErr);
+    console.warn(`⚠️ sudo prosodyctl failed, trying direct prosodyctl: ${sudoMessage}`);
+    try {
+      return execFileSync("prosodyctl", [command, jid], {
+        input,
+        encoding: "utf8",
+      });
+    } catch (plainErr) {
+      const plainMessage = buildExecError(plainErr);
+      throw new Error(`Failed to run prosodyctl with sudo: ${sudoMessage}\nFailed to run prosodyctl without sudo: ${plainMessage}`);
+    }
+  }
 }
 
 function runProsodyctl(command, jid) {
-  // sudo -n => no password prompt (will fail if sudoers not set)
-  return execFileSync("sudo", ["-n", "prosodyctl", command, jid], {
-    encoding: "utf8",
-  });
+  try {
+    return execFileSync("sudo", ["-n", "prosodyctl", command, jid], {
+      encoding: "utf8",
+    });
+  } catch (sudoErr) {
+    const sudoMessage = buildExecError(sudoErr);
+    console.warn(`⚠️ sudo prosodyctl failed, trying direct prosodyctl: ${sudoMessage}`);
+    try {
+      return execFileSync("prosodyctl", [command, jid], {
+        encoding: "utf8",
+      });
+    } catch (plainErr) {
+      const plainMessage = buildExecError(plainErr);
+      throw new Error(`Failed to run prosodyctl with sudo: ${sudoMessage}\nFailed to run prosodyctl without sudo: ${plainMessage}`);
+    }
+  }
 }
 
 async function sendBroadcast(messageText) {
@@ -137,6 +239,31 @@ async function sendMessageToUser(toJid, messageText) {
     return { success: true };
   } catch (error) {
     console.error(`❌ [MESSAGE BOT] Failed to send message to ${toJid}:`, error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+// Send normal text message to a MUC group
+async function sendGroupMessage(roomJid, messageText) {
+  try {
+    if (!messageBot) {
+      throw new Error("Message Bot is not running. Please start the bot first.");
+    }
+
+    console.log(`📤 [MESSAGE BOT] Sending group message to ${roomJid}`);
+
+    await joinMucRoom(roomJid);
+
+    await messageBot.send(
+      xml("message", { type: "groupchat", to: roomJid }, xml("body", {}, messageText))
+    );
+
+    await leaveMucRoom(roomJid);
+
+    console.log(`✅ [MESSAGE BOT] Group message sent successfully to ${roomJid}`);
+    return { success: true };
+  } catch (error) {
+    console.error(`❌ [MESSAGE BOT] Failed to send group message to ${roomJid}:`, error.message);
     return { success: false, error: error.message };
   }
 }
@@ -432,6 +559,8 @@ async function startMessageBot() {
     return;
   }
 
+  ensureMessageBotAccount();
+
   console.log("📨 Starting Message Bot...");
   console.log(`📨 Account: ${MSG_BOT_USERNAME}@${DOMAIN}`);
   console.log(`📨 Password: ${MSG_BOT_PASSWORD.replace(/./g, '*')}`);
@@ -476,6 +605,30 @@ async function stopMessageBot() {
       console.log("✅ Message Bot stopped");
     } catch (error) {
       console.error("❌ Error stopping Message Bot:", error);
+    }
+  }
+}
+
+function ensureMessageBotAccount() {
+  const jid = `${MSG_BOT_USERNAME}@${DOMAIN}`;
+  try {
+    console.log(`🔧 Ensuring message bot account exists: ${jid}`);
+    runProsodyctlWithPassword("adduser", jid, MSG_BOT_PASSWORD);
+    console.log(`✅ Message bot account created: ${jid}`);
+  } catch (error) {
+    const msg = error?.message || String(error);
+    if (msg.includes("already exists") || msg.includes("user already exists") || msg.includes("already registered")) {
+      console.log(`ℹ️ Message bot account already exists: ${jid}`);
+      try {
+        runProsodyctlWithPassword("passwd", jid, MSG_BOT_PASSWORD);
+        console.log(`✅ Updated password for message bot account: ${jid}`);
+      } catch (passwdError) {
+        console.error(`❌ Failed to update password for message bot account:`, passwdError?.message || passwdError);
+        throw passwdError;
+      }
+    } else {
+      console.error(`❌ Failed to ensure message bot account:`, msg);
+      throw error;
     }
   }
 }
@@ -812,9 +965,10 @@ async function setUserNickname(username, password, nickname) {
 
 // ---- routes ----
 app.get("/", (req, res) => {
+  const stats = ProsodyStats.getDashboardStats();
   try {
     const users = listUsers();
-    res.render("index", { users, DOMAIN, msg: null, err: null });
+    res.render("index", { users, DOMAIN, msg: null, err: null, stats });
   } catch (e) {
     res.render("index", {
       users: [],
@@ -823,6 +977,7 @@ app.get("/", (req, res) => {
       err:
         "Cannot read Prosody accounts dir. Fix permissions or path.\n\n" +
         (e?.message || String(e)),
+      stats,
     });
   }
 });
@@ -981,13 +1136,13 @@ app.post("/send-image", upload.single("image"), async (req, res) => {
 });
 
 /**
- * Send message to a specific user via XMPP
+ * Send message to a specific user or group via XMPP
  * POST /send-message
- * Body: { "to": "7550300724@chat.thirupathybright.in", "message": "Hello!" }
+ * Body: { "to": "jid", "message": "Hello!", "messageType": "chat"|"groupchat" }
  */
 app.post("/send-message", async (req, res) => {
   try {
-    const { to, message } = req.body;
+    const { to, message, messageType } = req.body;
 
     if (!to || !message) {
       return res.status(400).json({
@@ -996,7 +1151,6 @@ app.post("/send-message", async (req, res) => {
       });
     }
 
-    // Validate JID format (should contain @)
     if (!to.includes("@")) {
       return res.status(400).json({
         success: false,
@@ -1004,7 +1158,6 @@ app.post("/send-message", async (req, res) => {
       });
     }
 
-    // Check if message bot is running
     if (!messageBot) {
       return res.status(503).json({
         success: false,
@@ -1012,19 +1165,15 @@ app.post("/send-message", async (req, res) => {
       });
     }
 
-    // Send message
-    const result = await sendMessageToUser(to, message);
+    const isGroup = messageType === "groupchat";
+    const result = isGroup
+      ? await sendGroupMessage(to, message)
+      : await sendMessageToUser(to, message);
 
     if (result.success) {
-      res.json({
-        success: true,
-        message: `Message sent to ${to}`
-      });
+      res.json({ success: true, message: `Message sent to ${to}` });
     } else {
-      res.status(500).json({
-        success: false,
-        error: result.error || "Failed to send message"
-      });
+      res.status(500).json({ success: false, error: result.error || "Failed to send message" });
     }
   } catch (e) {
     res.status(500).json({
@@ -1076,6 +1225,208 @@ const nicknameCache = loadNicknameCache();
 const PROSODY_ROOT = `/var/lib/prosody/chat%2ethirupathybright%2ein`;
 const PEP_NICK_DIR   = `${PROSODY_ROOT}/pep_http%3a%2f%2fjabber%2eorg%2fprotocol%2fnick`;
 const PEP_VCARD4_DIR = `${PROSODY_ROOT}/pep_urn%3axmpp%3avcard4`;
+const PEP_BOOKMARKS_DIR = `${PROSODY_ROOT}/pep_urn%3axmpp%3abookmarks%3a1`;
+const PEP_NODES_DIR = `${PROSODY_ROOT}/pep`;
+
+// Besides the per-node item-storage files (PEP_BOOKMARKS_DIR etc.), Prosody
+// keeps a separate per-user PEP *node registry* at PEP_NODES_DIR/<user>.dat
+// that records which pubsub nodes the user owns and their config. A client
+// only ever gets served items for a node that's registered here — appending
+// to a *_DIR/<user>.list file for a node prosody doesn't know about is inert.
+// For any account that has logged in and published/received a bookmark
+// before, this node already exists (their client created it). But for a
+// brand-new or just-recreated account, it doesn't yet, and addMucBookmark's
+// file append would silently do nothing until the user's own client
+// happened to create the node itself. This ensures the node exists first,
+// using the exact same config Prosody itself writes for it.
+function ensurePepBookmarksNode(username) {
+  const filePath = `${PEP_NODES_DIR}/${username}.dat`;
+  execFileSync("sudo", ["-n", "install", "-d", "-o", "prosody", "-g", "prosody", "-m", "750", PEP_NODES_DIR]);
+
+  let content = "";
+  try {
+    content = execFileSync("sudo", ["-n", "cat", filePath], { encoding: "utf8" });
+  } catch (e) {
+    content = "return {\n};\n";
+  }
+
+  if (content.includes('["urn:xmpp:bookmarks:1"]')) return; // already registered
+
+  const nodeBlock =
+    `\t["urn:xmpp:bookmarks:1"] = {\n` +
+    `\t\t["subscribers"] = {};\n` +
+    `\t\t["name"] = "urn:xmpp:bookmarks:1";\n` +
+    `\t\t["config"] = {\n` +
+    `\t\t\t["persist_items"] = true;\n` +
+    `\t\t\t["send_last_published_item"] = "never";\n` +
+    `\t\t\t["notify_retract"] = true;\n` +
+    `\t\t\t["notify_delete"] = true;\n` +
+    `\t\t\t["access_model"] = "whitelist";\n` +
+    `\t\t\t["max_items"] = "max";\n` +
+    `\t\t};\n` +
+    `\t\t["affiliations"] = {};\n` +
+    `\t};\n`;
+
+  // Insert just before the final top-level closing `};` so this stays a
+  // simple, targeted insert rather than a full Lua parse/rewrite.
+  const lastBrace = content.lastIndexOf("};");
+  if (lastBrace === -1) throw new Error(`Unexpected format in ${filePath}, refusing to edit`);
+  const updated = content.slice(0, lastBrace) + nodeBlock + content.slice(lastBrace);
+
+  execFileSync("sudo", ["-n", "tee", filePath], { input: updated, encoding: "utf8" });
+  execFileSync("sudo", ["-n", "chown", "prosody:prosody", filePath]);
+  execFileSync("sudo", ["-n", "chmod", "640", filePath]);
+}
+
+// Debounced reload of Prosody's pep module so freshly written bookmark files
+// are actually served; then disconnect affected users so apps refetch.
+let pepReloadTimer = null;
+const pepReloadPending = new Set();
+function schedulePepReload(memberJid) {
+  if (memberJid) pepReloadPending.add(memberJid);
+  if (pepReloadTimer) clearTimeout(pepReloadTimer);
+  pepReloadTimer = setTimeout(() => {
+    pepReloadTimer = null;
+    const jids = [...pepReloadPending];
+    pepReloadPending.clear();
+    try {
+      runProsodyctlShell(`module:reload("pep", "${DOMAIN}")
+`);
+    } catch (e) {
+      console.warn(`⚠️ Could not reload pep module: ${e?.message || e}`);
+    }
+    for (const jid of jids) {
+      try {
+        runProsodyctlShell(`return c2s:close("${jid.replace(/"/g, '\\"')}")
+`);
+      } catch (e) {
+        console.warn(`⚠️ Could not force-reconnect ${jid}: ${e?.message || e}`);
+      }
+    }
+  }, 1500);
+}
+
+// Add a MUC bookmark (XEP-0402) so a newly-added group member sees the group
+// in their chat app's group list without having to manually join it first.
+// Server-side room membership (affiliation) and client-side bookmarks are
+// two separate things in XMPP — adding someone as a member does NOT make
+// their app show the group; a bookmark is what does that.
+//
+// Prosody's PEP item-storage files are an append-only log: each `item({...})`
+// block is one record, and later ones with the same `key` shadow earlier ones
+// on read. Appending a new item is therefore safe to do while the server is
+// running — it can't corrupt existing data, and at worst races a concurrent
+// write from the same user's own client (rare, and self-healing on their
+// next bookmark save).
+function addMucBookmark(memberJid, roomJid, roomName) {
+  const username = memberJid.split("@")[0];
+  ensurePepBookmarksNode(username);
+  const filePath = `${PEP_BOOKMARKS_DIR}/${username}.list`;
+  const nowEpoch = Math.floor(Date.now() / 1000);
+  const stamp = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+  const roomJidEsc = roomJid.replace(/"/g, '\\"');
+  const roomNameEsc = (roomName || roomJid.split("@")[0]).replace(/"/g, '\\"');
+  const memberJidEsc = memberJid.replace(/"/g, '\\"');
+
+  const item = `item({\n` +
+    `\t["key"] = "${roomJidEsc}";\n` +
+    `\t["when"] = ${nowEpoch};\n` +
+    `\t["attr"] = {\n` +
+    `\t\t["xmlns"] = "urn:xmpp:bookmarks:1";\n` +
+    `\t\t["name"] = "${roomNameEsc}";\n` +
+    `\t\t["stamp"] = "${stamp}";\n` +
+    `\t\t["autojoin"] = "1";\n` +
+    `\t};\n` +
+    `\t["name"] = "conference";\n` +
+    `\t["with"] = "${memberJidEsc}";\n` +
+    `});\n`;
+
+  // The PEP data directory is owned by the prosody user (0750), so the
+  // dashboard's own process (running as ubuntu) can't write there directly
+  // — write via sudo instead. New files are created 0640 prosody:prosody to
+  // match Prosody's own file layout.
+  execFileSync("sudo", ["-n", "install", "-d", "-o", "prosody", "-g", "prosody", "-m", "750", PEP_BOOKMARKS_DIR]);
+  execFileSync("sudo", ["-n", "tee", "-a", filePath], { input: item, encoding: "utf8" });
+  execFileSync("sudo", ["-n", "chown", "prosody:prosody", filePath]);
+  execFileSync("sudo", ["-n", "chmod", "640", filePath]);
+
+  // Prosody caches each user's PEP service in memory, so the files written
+  // above are ignored (item-not-found) until the pep module is reloaded.
+  // Reload it (debounced for bulk adds), then kick the user so their app
+  // reconnects and re-reads the bookmarks.
+  schedulePepReload(memberJid);
+}
+
+// Remove a MUC bookmark. Unlike addMucBookmark this can't just append —
+// the append-only "last item for a key wins" format has no protocol-level
+// tombstone we can rely on here, so instead: read the whole log, drop every
+// item({...}) block whose key matches this room, and overwrite the file with
+// what's left. Safe because we parse with the same brace-matching approach
+// used elsewhere in this file (extractTopLevelBlocks) rather than a fragile
+// regex, so a room name/JID containing "});" etc. can't break the split.
+function removeMucBookmark(memberJid, roomJid) {
+  const username = memberJid.split("@")[0];
+  const filePath = `${PEP_BOOKMARKS_DIR}/${username}.list`;
+  if (!fs.existsSync(filePath)) return;
+
+  const content = fs.readFileSync(filePath, "utf8");
+  const keyNeedle = `["key"] = "${roomJid}";`;
+
+  // Each record is `item(` + one top-level {...} block + `);`. Reuse the
+  // existing brace-matcher to find each block's extent, then keep only the
+  // ones that don't reference this room.
+  const blocks = extractTopLevelBlocks(content);
+  let rebuilt = "";
+  let cursor = 0;
+  for (const block of blocks) {
+    const blockStart = content.indexOf(block, cursor);
+    const prefixStart = content.lastIndexOf("item(", blockStart);
+    const afterBlock = blockStart + block.length;
+    const suffixEnd = content.indexOf(";", afterBlock) + 1; // include the trailing `);`
+    const fullRecord = content.slice(prefixStart, suffixEnd);
+    if (!block.includes(keyNeedle)) {
+      rebuilt += fullRecord + "\n";
+    }
+    cursor = suffixEnd;
+  }
+
+  execFileSync("sudo", ["-n", "tee", filePath], { input: rebuilt, encoding: "utf8" });
+  execFileSync("sudo", ["-n", "chown", "prosody:prosody", filePath]);
+  execFileSync("sudo", ["-n", "chmod", "640", filePath]);
+  schedulePepReload(memberJid);
+}
+
+// When a whole group is deleted, every member who had it bookmarked is left
+// with a broken/ghost entry in their chat app forever unless we go find and
+// strip it from each of them — removeMucBookmark only handles one user at a
+// time (the normal remove-a-single-member case), this does all of them.
+function removeMucBookmarkFromAllUsers(roomJid) {
+  let usernames;
+  try {
+    usernames = fs.readdirSync(PEP_BOOKMARKS_DIR)
+      .filter((f) => f.endsWith(".list"))
+      .map((f) => f.replace(/\.list$/, ""));
+  } catch (_) {
+    return 0; // directory doesn't exist yet — nothing to clean
+  }
+
+  const keyNeedle = `["key"] = "${roomJid}";`;
+  let cleaned = 0;
+  for (const username of usernames) {
+    const filePath = `${PEP_BOOKMARKS_DIR}/${username}.list`;
+    let content;
+    try {
+      content = fs.readFileSync(filePath, "utf8");
+    } catch (_) {
+      continue;
+    }
+    if (!content.includes(keyNeedle)) continue;
+
+    removeMucBookmark(`${username}@${DOMAIN}`, roomJid);
+    cleaned++;
+  }
+  return cleaned;
+}
 
 // Extract all top-level balanced brace blocks from a Lua string.
 function extractTopLevelBlocks(content) {
@@ -1389,6 +1740,407 @@ app.get("/marketing-persons/user/:userJid", (req, res) => {
   }
 });
 
+// ===== MUC (Group) MANAGEMENT =====
+// Uses the messageBot's XMPP connection to send proper MUC IQ stanzas
+// (create/config/affiliation/destroy) per XEP-0045, rather than shelling out.
+//
+// PERMANENT_ADMIN is always granted the "owner" affiliation on every group —
+// on creation and whenever a member is added (self-healing if it was ever
+// removed by someone else).
+
+const MUC_DOMAIN = `conference.${DOMAIN}`;
+const PERMANENT_ADMIN = "7550300724@chat.thirupathybright.in";
+
+// Date.now() alone collides when multiple IQs are built in the same
+// millisecond (e.g. Promise.all firing 3 requests at once) — every listener
+// then matches the same stanza.attrs.id and all resolve with the first
+// response that arrives, silently returning wrong data for the others.
+let _mucIdCounter = 0;
+function uniqueMucId(prefix) {
+  _mucIdCounter += 1;
+  return `${prefix}_${Date.now()}_${_mucIdCounter}`;
+}
+
+// List all MUC rooms via `prosodyctl shell` (muc:list). Unlike disco#items,
+// this sees hidden/members-only rooms too (e.g. the real "Tbi Team Report"
+// group) — disco#items only returns publicly-listed rooms, which silently
+// dropped it. Destroyed rooms leave an inert tombstone file behind, so we
+// filter those out using each room's `_data.destroyed` flag.
+function runProsodyctlShell(script) {
+  try {
+    return execFileSync("sudo", ["-n", "prosodyctl", "shell"], {
+      input: script,
+      encoding: "utf8",
+      timeout: 15000,
+    });
+  } catch (sudoErr) {
+    const sudoMessage = buildExecError(sudoErr);
+    try {
+      return execFileSync("prosodyctl", ["shell"], {
+        input: script,
+        encoding: "utf8",
+        timeout: 15000,
+      });
+    } catch (plainErr) {
+      const plainMessage = buildExecError(plainErr);
+      throw new Error(`Failed to run prosodyctl shell with sudo: ${sudoMessage}\nWithout sudo: ${plainMessage}`);
+    }
+  }
+}
+
+// Parse `| some text` result lines out of prosodyctl shell's console output.
+// Real result lines start with "| " at column 0 (no leading whitespace);
+// the ASCII-art banner also contains "|" characters but always has leading
+// indentation, so checking the RAW (untrimmed) line prefix distinguishes them.
+// Also skips the trailing "| OK: N rooms" summary line.
+function parseShellListLines(output) {
+  return output
+    .split("\n")
+    .filter((l) => l.startsWith("| ") && !l.startsWith("| OK:"))
+    .map((l) => l.slice(2).trim());
+}
+
+async function listMucRooms() {
+  const listOutput = runProsodyctlShell(`muc:list("${MUC_DOMAIN}")\n`);
+  const jids = parseShellListLines(listOutput);
+  if (jids.length === 0) return [];
+
+  // One combined script: for each room, return "D" if destroyed, else its name.
+  const script = jids
+    .map((jid) => {
+      const esc = jid.replace(/"/g, '\\"');
+      return `return muc:room("${esc}")._data.destroyed and "D" or (muc:room("${esc}")._data.name or "${esc.split("@")[0]}")\n`;
+    })
+    .join("");
+  const infoOutput = runProsodyctlShell(script);
+  const results = parseShellListLines(infoOutput).filter((l) => l.startsWith("Result: "));
+  const names = results.map((l) => l.slice("Result: ".length));
+
+  const rooms = [];
+  for (let i = 0; i < jids.length; i++) {
+    if (names[i] === "D") continue; // tombstone — skip
+    rooms.push({ jid: jids[i], name: names[i] || jids[i].split("@")[0] });
+  }
+  return rooms;
+}
+
+// Create a new persistent, public MUC room and grant PERMANENT_ADMIN owner.
+async function createMucRoom(roomLocalPart, roomName) {
+  if (!messageBot) throw new Error("Message bot is not running. Please start the bot first.");
+
+  const roomJid = `${roomLocalPart}@${MUC_DOMAIN}`;
+  const nickname = MSG_BOT_USERNAME;
+  const roomWithNick = `${roomJid}/${nickname}`;
+
+  // Step 1: join as bot to trigger room creation (bot becomes owner by default)
+  await new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      messageBot.removeListener("stanza", onPresence);
+      resolve();
+    }, 5000);
+
+    function onPresence(stanza) {
+      if (stanza.is("presence") && stanza.attrs.from && stanza.attrs.from.startsWith(roomJid + "/")) {
+        clearTimeout(timeout);
+        messageBot.removeListener("stanza", onPresence);
+        resolve();
+      }
+    }
+    messageBot.on("stanza", onPresence);
+    messageBot.send(
+      xml("presence", { to: roomWithNick }, xml("x", { xmlns: "http://jabber.org/protocol/muc" }))
+    );
+  });
+
+  // Step 2: submit room configuration (name, persistent, public)
+  const configRequestId = uniqueMucId("muc_config");
+  const configForm = xml(
+    "iq",
+    { type: "set", to: roomJid, id: configRequestId },
+    xml("query", { xmlns: "http://jabber.org/protocol/muc#owner" },
+      xml("x", { xmlns: "jabber:x:data", type: "submit" },
+        xml("field", { var: "FORM_TYPE" }, xml("value", {}, "http://jabber.org/protocol/muc#roomconfig")),
+        xml("field", { var: "muc#roomconfig_roomname" }, xml("value", {}, roomName || roomLocalPart)),
+        xml("field", { var: "muc#roomconfig_persistentroom" }, xml("value", {}, "1")),
+        xml("field", { var: "muc#roomconfig_publicroom" }, xml("value", {}, "1")),
+        // Without this, the room has no real access control: anyone can
+        // join and send messages regardless of the affiliation list, so
+        // removing a member here wouldn't actually revoke their access —
+        // matches okipamom's existing (working) configuration.
+        xml("field", { var: "muc#roomconfig_membersonly" }, xml("value", {}, "1")),
+      )
+    )
+  );
+
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      messageBot.removeListener("stanza", onStanza);
+      reject(new Error("Timeout configuring room"));
+    }, 8000);
+
+    function onStanza(stanza) {
+      if (stanza.is("iq") && stanza.attrs.id === configRequestId) {
+        clearTimeout(timeout);
+        messageBot.removeListener("stanza", onStanza);
+        if (stanza.attrs.type === "result") resolve();
+        else reject(new Error("Failed to configure room"));
+      }
+    }
+    messageBot.on("stanza", onStanza);
+    messageBot.send(configForm);
+  });
+
+  // Step 3: grant PERMANENT_ADMIN owner affiliation
+  await setMucAffiliation(roomJid, PERMANENT_ADMIN, "owner");
+
+  // Step 4: bot leaves (it doesn't need to stay in every group)
+  await messageBot.send(xml("presence", { to: roomWithNick, type: "unavailable" }));
+
+  return { roomJid };
+}
+
+// Set a member/owner/admin affiliation on a room.
+// Uses `prosodyctl shell` (server-side admin power) instead of an XMPP IQ
+// stanza — the IQ approach only works if the bot itself already holds
+// owner/admin rights in that specific room, which fails for rooms created
+// before this dashboard existed or by someone else entirely (see: "Only
+// owners can configure rooms" errors on rooms like a revived old tombstone).
+async function setMucAffiliation(roomJid, memberJid, affiliation) {
+  // Every line sent to `prosodyctl shell` is executed as its own separate
+  // REPL command — `local` variables do NOT persist across lines. Must be
+  // a single expression using `and`/`or` instead of multi-statement Lua.
+  const jidEsc = roomJid.replace(/"/g, '\\"');
+  const memberEsc = memberJid.replace(/"/g, '\\"');
+  const affEsc = affiliation === "none" ? "nil" : `"${affiliation.replace(/"/g, '\\"')}"`;
+  const script = `return (muc:room("${jidEsc}"):set_affiliation(true, "${memberEsc}", ${affEsc})) and "OK" or "FAIL"\n`;
+  const output = runProsodyctlShell(script);
+  const [result] = parseShellListLines(output).filter((l) => l.startsWith("Result: "));
+  const value = result ? result.slice("Result: ".length) : "";
+  if (value !== "OK") throw new Error(`Failed to set affiliation for ${memberJid} in ${roomJid} (got: ${value || "no response"})`);
+}
+
+// Get the affiliation list for a room (owners/members/admins) via muc#admin IQ.
+async function getMucAffiliations(roomJid, affiliation) {
+  if (!messageBot) throw new Error("Message bot is not running. Please start the bot first.");
+
+  const requestId = uniqueMucId("muc_aff_list");
+  const request = xml(
+    "iq",
+    { type: "get", to: roomJid, id: requestId },
+    xml("query", { xmlns: "http://jabber.org/protocol/muc#admin" },
+      xml("item", { affiliation })
+    )
+  );
+
+  const responsePromise = new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      messageBot.removeListener("stanza", onStanza);
+      resolve([]);
+    }, 5000);
+
+    function onStanza(stanza) {
+      if (stanza.is("iq") && stanza.attrs.id === requestId) {
+        clearTimeout(timeout);
+        messageBot.removeListener("stanza", onStanza);
+        if (stanza.attrs.type === "result") {
+          const query = stanza.getChild("query");
+          const items = query ? query.getChildren("item") : [];
+          resolve(items.map((item) => item.attrs.jid));
+        } else {
+          resolve([]);
+        }
+      }
+    }
+    messageBot.on("stanza", onStanza);
+  });
+
+  await messageBot.send(request);
+  return responsePromise;
+}
+
+// Destroy a MUC room permanently.
+// Destroy a MUC room permanently. Uses `prosodyctl shell` for the same
+// reason as setMucAffiliation — an IQ-based destroy only works if the bot
+// itself is owner, which isn't true for rooms it didn't create.
+async function destroyMucRoom(roomJid, reason) {
+  const jidEsc = roomJid.replace(/"/g, '\\"');
+  const reasonEsc = (reason || "Room removed by admin").replace(/"/g, '\\"');
+  const script = `return (muc:room("${jidEsc}"):destroy(nil, "${reasonEsc}")) and "OK" or "FAIL"\n`;
+  const output = runProsodyctlShell(script);
+  const [result] = parseShellListLines(output).filter((l) => l.startsWith("Result: "));
+  const value = result ? result.slice("Result: ".length) : "";
+  if (value !== "OK") throw new Error(`Failed to destroy room ${roomJid} (got: ${value || "no response"})`);
+}
+
+// ---- routes ----
+
+// List all groups with member counts.
+app.get("/groups/list", async (req, res) => {
+  try {
+    const rooms = await listMucRooms();
+    const withCounts = [];
+    // Sequential per room, and sequential per affiliation within each room —
+    // avoids relying solely on uniqueMucId() for correctness when many IQs
+    // to the same room could otherwise land in the same event-loop tick.
+    for (const r of rooms) {
+      try {
+        const owners = await getMucAffiliations(r.jid, "owner");
+        const admins = await getMucAffiliations(r.jid, "admin");
+        const members = await getMucAffiliations(r.jid, "member");
+        const uniqueCount = new Set([...owners, ...admins, ...members]).size;
+        withCounts.push({ jid: r.jid, name: r.name, memberCount: uniqueCount });
+      } catch (_) {
+        withCounts.push({ jid: r.jid, name: r.name, memberCount: null });
+      }
+    }
+    res.json({ success: true, groups: withCounts });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e?.message || String(e) });
+  }
+});
+
+// Get members (owners/admins/members) of a single group.
+app.get("/groups/members", async (req, res) => {
+  try {
+    const roomJid = (req.query.jid || "").trim();
+    if (!roomJid) throw new Error("jid query param is required");
+
+    // Sequential, not Promise.all: three IQs to the same room in the same
+    // tick previously collided on request IDs and all resolved with the
+    // same (wrong) response. uniqueMucId() fixed the collision, but keeping
+    // these sequential avoids relying on that alone for correctness here.
+    const owners = await getMucAffiliations(roomJid, "owner");
+    const admins = await getMucAffiliations(roomJid, "admin");
+    const members = await getMucAffiliations(roomJid, "member");
+
+    const withNickname = (jids) => jids.map((jid) => {
+      const username = jid.split("@")[0];
+      return { jid, nickname: readNicknameFromDisk(username) || "" };
+    });
+
+    res.json({
+      success: true,
+      owners: withNickname(owners),
+      admins: withNickname(admins),
+      members: withNickname(members),
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e?.message || String(e) });
+  }
+});
+
+// Create a new group. PERMANENT_ADMIN is always made owner.
+app.post("/groups/create", async (req, res) => {
+  try {
+    // JID local-parts are normalized to lowercase by the XMPP server (nodeprep)
+    // regardless of what's sent — lowercasing here up front means the roomJid
+    // we build and return always matches what Prosody actually creates.
+    // Mismatched case previously caused "Failed to set affiliation ... no
+    // response" because later calls queried a JID the room didn't exist under.
+    const roomLocalPart = safeUsername((req.body.roomId || "").toLowerCase());
+    const roomName = (req.body.name || "").trim();
+    if (!roomLocalPart) throw new Error("Invalid group ID. Use letters/numbers/._- only.");
+    if (!roomName) throw new Error("Group name is required.");
+
+    const { roomJid } = await createMucRoom(roomLocalPart, roomName);
+    res.json({ success: true, message: `Group created: ${roomJid}`, jid: roomJid });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e?.message || String(e) });
+  }
+});
+
+// Delete (destroy) a group.
+app.post("/groups/delete", async (req, res) => {
+  try {
+    const roomJid = (req.body.jid || "").trim();
+    if (!roomJid || !roomJid.includes("@")) throw new Error("Valid group JID is required.");
+
+    await destroyMucRoom(roomJid, "Deleted by admin via dashboard");
+
+    // Destroying the room server-side leaves anyone who'd bookmarked it with
+    // a permanently broken/ghost entry in their chat app — strip it from
+    // everyone, not just whoever the dashboard happens to think was a member.
+    let bookmarksCleaned = 0;
+    try {
+      bookmarksCleaned = removeMucBookmarkFromAllUsers(roomJid);
+    } catch (bookmarkErr) {
+      console.error(`Failed to sweep bookmarks for deleted group ${roomJid}:`, bookmarkErr.message);
+    }
+
+    res.json({
+      success: true,
+      message: `Group deleted: ${roomJid}${bookmarksCleaned ? ` (removed from ${bookmarksCleaned} user${bookmarksCleaned > 1 ? "s'" : "'s"} bookmarks)` : ""}`,
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e?.message || String(e) });
+  }
+});
+
+// Add a member to a group. Always re-asserts PERMANENT_ADMIN as owner too.
+app.post("/groups/add-member", async (req, res) => {
+  try {
+    const roomJid = (req.body.jid || "").trim();
+    const memberJid = (req.body.memberJid || "").trim();
+    const affiliation = (req.body.affiliation || "member").trim();
+
+    if (!roomJid || !roomJid.includes("@")) throw new Error("Valid group JID is required.");
+    if (!memberJid || !memberJid.includes("@")) throw new Error("Valid member JID is required.");
+    if (!["member", "admin", "owner"].includes(affiliation)) throw new Error("Invalid affiliation.");
+
+    await setMucAffiliation(roomJid, memberJid, affiliation);
+
+    // Always keep the permanent admin as owner, regardless of who else was just added.
+    if (memberJid !== PERMANENT_ADMIN) {
+      await setMucAffiliation(roomJid, PERMANENT_ADMIN, "owner");
+    }
+
+    // Give the member a bookmark so the group shows up in their chat app
+    // automatically — being a room member alone doesn't do that (see
+    // addMucBookmark for why). Best-effort: a failure here shouldn't fail
+    // the whole request, since the person IS a real member either way.
+    try {
+      const roomJidEsc = roomJid.replace(/"/g, '\\"');
+      const nameOutput = runProsodyctlShell(`return muc:room("${roomJidEsc}")._data.name\n`);
+      const [nameResult] = parseShellListLines(nameOutput).filter((l) => l.startsWith("Result: "));
+      const roomName = nameResult ? nameResult.slice("Result: ".length) : roomJid.split("@")[0];
+      addMucBookmark(memberJid, roomJid, roomName === "nil" ? roomJid.split("@")[0] : roomName);
+    } catch (bookmarkErr) {
+      console.error(`Failed to add bookmark for ${memberJid} on ${roomJid}:`, bookmarkErr.message);
+    }
+
+    res.json({ success: true, message: `${memberJid} added to ${roomJid} as ${affiliation}` });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e?.message || String(e) });
+  }
+});
+
+// Remove a member from a group (sets affiliation to "none"). Blocks removing the permanent admin.
+app.post("/groups/remove-member", async (req, res) => {
+  try {
+    const roomJid = (req.body.jid || "").trim();
+    const memberJid = (req.body.memberJid || "").trim();
+
+    if (!roomJid || !roomJid.includes("@")) throw new Error("Valid group JID is required.");
+    if (!memberJid || !memberJid.includes("@")) throw new Error("Valid member JID is required.");
+    if (memberJid === PERMANENT_ADMIN) throw new Error(`${PERMANENT_ADMIN} is the permanent admin and cannot be removed.`);
+
+    await setMucAffiliation(roomJid, memberJid, "none");
+
+    // Also drop their bookmark — otherwise their app keeps showing a group
+    // they can no longer actually join (confusing, and the whole point of
+    // "remove" is that it disappears for them). Best-effort like the add path.
+    try {
+      removeMucBookmark(memberJid, roomJid);
+    } catch (bookmarkErr) {
+      console.error(`Failed to remove bookmark for ${memberJid} on ${roomJid}:`, bookmarkErr.message);
+    }
+
+    res.json({ success: true, message: `${memberJid} removed from ${roomJid}` });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e?.message || String(e) });
+  }
+});
+
 // ===== NICKNAME API ENDPOINTS =====
 
 /**
@@ -1478,21 +2230,25 @@ app.post("/users/nickname/with-reset", async (req, res) => {
   }
 });
 
+// Web chat engine (routes are mounted near the top, after requireLogin)
+const webchat = createWebChat({
+  domain: DOMAIN,
+  service: XMPP_SERVICE,
+  resolveName: readNicknameFromDisk,
+  listUsers,
+});
+
 // Health check
 app.get("/health", (req, res) => res.json({ ok: true }));
 
-app.listen(3005, () => {
+app.listen(3005, "127.0.0.1", () => {
   console.log("✅ XMPP Admin Dashboard: http://0.0.0.0:3005");
 
-  // Auto-start both bots on server start
-  Promise.all([
-    startAIBot().catch(err => {
-      console.error("❌ Failed to auto-start AI Bot:", err.message);
-    }),
-    startMessageBot().catch(err => {
-      console.error("❌ Failed to auto-start Message Bot:", err.message);
-    })
-  ]).then(() => {
-    console.log("🚀 All bots initialization completed");
+  // Auto-start Message Bot only. AI Bot is intentionally NOT auto-started here:
+  // it logs in as the same JID (broadcast@) as chatbot/xmpp_erp_bot.py, and having
+  // both online at once causes duplicate replies to every direct message.
+  // Use POST /ai-bot/start if this bot is ever needed instead of the Python one.
+  startMessageBot().catch(err => {
+    console.error("❌ Failed to auto-start Message Bot:", err.message);
   });
 });

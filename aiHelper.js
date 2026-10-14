@@ -1,13 +1,10 @@
-const fetch = require('node-fetch');
 const DatabaseHelper = require('./wpp/config/databaseHelper');
 const SQLAgent = require('./wpp/config/sqlAgent');
 const MarketingPersonStore = require('./marketingPersonStore');
+const { askClaude } = require('./claudeClient');
 
-// AI Configuration for Sarvam AI
+// AI Configuration (Claude Code CLI backend)
 const AI_CONFIG = {
-  API_KEY: 'sk_sggnlnzm_2TzPY0ameO13qAWYxikieql0',
-  API_URL: 'https://api.sarvam.ai/v1/chat/completions',
-  MODEL: 'sarvam-m',
   SYSTEM_PROMPT: `You are an AI assistant for Thirupathybright Industries with DIRECT DATABASE ACCESS.
 
 IMPORTANT FORMATTING RULES:
@@ -243,32 +240,22 @@ How can I help you today?`;
       }
     }
 
-    console.log(`🤖 Sending to Sarvam AI for ${userJid}:`, JSON.stringify(messagesForAPI).substring(0, 500));
+    console.log(`🤖 Sending to Claude Code for ${userJid}:`, JSON.stringify(messagesForAPI).substring(0, 500));
 
-    // Call Sarvam AI API
-    const response = await fetch(AI_CONFIG.API_URL, {
-      method: 'POST',
-      headers: {
-        'api-subscription-key': AI_CONFIG.API_KEY,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        messages: messagesForAPI,
-        model: AI_CONFIG.MODEL
-      })
-    });
+    // Build a single prompt from the message history (Claude CLI is single-turn per call here)
+    const conversationText = messagesForAPI
+      .map(m => `${m.role === 'assistant' ? 'Assistant' : 'User'}: ${m.content}`)
+      .join('\n\n');
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ Sarvam AI API Error:', errorText);
-      throw new Error(`AI API error: ${response.status} - ${errorText}`);
+    // Call Claude Code CLI
+    const rawMessage = await askClaude(conversationText);
+
+    if (!rawMessage) {
+      throw new Error('Claude CLI returned an empty response');
     }
+    console.log('✅ Claude Code Response received');
 
-    const data = await response.json();
-    console.log('✅ Sarvam AI Response received');
-
-    // Extract AI response and strip <think>...</think> blocks (chain-of-thought reasoning)
-    const rawMessage = data.choices?.[0]?.message?.content || 'Sorry, I could not generate a response.';
+    // Strip <think>...</think> blocks (chain-of-thought reasoning), if any
     const aiMessage = rawMessage.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
     // Add AI response to history

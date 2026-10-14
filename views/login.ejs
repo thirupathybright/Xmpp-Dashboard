@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign In — TBI Messenger Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --void: #f5f7f9;
+    --panel: #ffffff;
+    --wire: #dde3e8;
+    --signal: #0f9d74;
+    --signal-dim: #e3f6ee;
+    --signal-glow: rgba(15, 157, 116, 0.25);
+    --text: #10161c;
+    --text-dim: #57626c;
+    --text-faint: #8b97a1;
+    --critical: #d0304a;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --void: #0a0e14;
+      --panel: #12181f;
+      --wire: #1c2530;
+      --signal: #3ee8b5;
+      --signal-dim: #16382e;
+      --signal-glow: rgba(62, 232, 181, 0.18);
+      --text: #e4ecf2;
+      --text-dim: #8494a3;
+      --text-faint: #566270;
+      --critical: #ff5470;
+    }
+  }
+  :root[data-theme="dark"] {
+    --void: #0a0e14;
+    --panel: #12181f;
+    --wire: #1c2530;
+    --signal: #3ee8b5;
+    --signal-dim: #16382e;
+    --signal-glow: rgba(62, 232, 181, 0.18);
+    --text: #e4ecf2;
+    --text-dim: #8494a3;
+    --text-faint: #566270;
+    --critical: #ff5470;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html { color-scheme: light dark; }
+  body {
+    font-family: var(--font-sans);
+    background: var(--void);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+  }
+
+  /* Ambient grid backdrop */
+  .grid-bg {
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(var(--wire) 1px, transparent 1px),
+      linear-gradient(90deg, var(--wire) 1px, transparent 1px);
+    background-size: 42px 42px;
+    opacity: 0.35;
+    mask-image: radial-gradient(ellipse 60% 50% at 50% 40%, black 0%, transparent 75%);
+    pointer-events: none;
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--wire);
+    border-radius: 16px;
+    padding: 40px;
+    width: 100%;
+    max-width: 380px;
+    position: relative;
+    z-index: 1;
+    opacity: 0;
+    animation: cardIn 0.5s ease-out 0.1s forwards;
+  }
+  @keyframes cardIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+  .mark {
+    width: 52px; height: 52px;
+    border-radius: 13px;
+    background: linear-gradient(160deg, var(--signal), var(--signal-dim));
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-mono); font-weight: 700; font-size: 18px;
+    color: var(--void);
+    margin: 0 auto 22px;
+  }
+  h1 {
+    font-family: var(--font-mono);
+    font-size: 15px; font-weight: 600; letter-spacing: 0.02em;
+    text-align: center;
+    margin-bottom: 4px;
+  }
+  p.sub {
+    text-align: center;
+    color: var(--text-faint);
+    font-size: 12.5px;
+    margin-bottom: 30px;
+    font-family: var(--font-mono);
+  }
+  label {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+  input {
+    width: 100%;
+    padding: 11px 14px;
+    border: 1px solid var(--wire);
+    border-radius: 8px;
+    background: var(--void);
+    color: var(--text);
+    font-size: 14px;
+    font-family: var(--font-sans);
+    margin-bottom: 18px;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  input:focus {
+    outline: none;
+    border-color: var(--signal);
+    box-shadow: 0 0 0 3px var(--signal-glow);
+  }
+  button {
+    width: 100%;
+    padding: 12px;
+    background: var(--signal);
+    color: var(--void);
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.08s;
+    font-family: var(--font-sans);
+  }
+  button:hover { opacity: 0.9; }
+  button:active { transform: scale(0.99); }
+  .tabs {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    background: var(--void);
+    border: 1px solid var(--wire);
+    border-radius: 10px;
+    margin-bottom: 24px;
+  }
+  .tab {
+    flex: 1;
+    padding: 9px 8px;
+    background: transparent;
+    color: var(--text-dim);
+    border-radius: 7px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .tab:hover { opacity: 1; color: var(--text); }
+  .tab[aria-selected="true"] {
+    background: var(--panel);
+    color: var(--signal);
+    box-shadow: 0 0 0 1px var(--wire);
+  }
+  .tab:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+  form[hidden] { display: none; }
+  .error {
+    background: rgba(255,84,112,0.1);
+    border: 1px solid var(--critical);
+    color: var(--critical);
+    font-size: 13px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    margin-bottom: 18px;
+  }
+  .footer {
+    text-align: center;
+    margin-top: 24px;
+    font-size: 11px;
+    color: var(--text-faint);
+    font-family: var(--font-mono);
+  }
+</style>
+</head>
+<body>
+  <div class="grid-bg"></div>
+  <div class="card">
+    <div class="mark">TBI</div>
+    <h1>MESSENGER CONTROL</h1>
+    <p class="sub">Sign in to continue</p>
+
+    <% var activeTab = (typeof tab !== 'undefined' && tab === 'user') ? 'user' : 'admin'; %>
+    <div class="tabs" role="tablist">
+      <button type="button" class="tab" role="tab" id="tab-admin" data-tab="admin" aria-selected="<%= activeTab === 'admin' %>">Sign in as Admin</button>
+      <button type="button" class="tab" role="tab" id="tab-user" data-tab="user" aria-selected="<%= activeTab === 'user' %>">Sign in as User</button>
+    </div>
+
+    <% if (err) { %>
+      <div class="error" role="alert"><%= err %></div>
+    <% } %>
+
+    <form method="POST" action="/login" id="form-admin" <%- activeTab === 'admin' ? '' : 'hidden' %>>
+      <input type="hidden" name="role" value="admin">
+      <label for="email">Admin email</label>
+      <input type="email" id="email" name="email" required autocomplete="username" <%- activeTab === 'admin' ? 'autofocus' : 'disabled' %>>
+
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" required autocomplete="current-password" <%- activeTab === 'admin' ? '' : 'disabled' %>>
+
+      <button type="submit">Sign In as Admin</button>
+    </form>
+
+    <form method="POST" action="/login" id="form-user" <%- activeTab === 'user' ? '' : 'hidden' %>>
+      <input type="hidden" name="role" value="user">
+      <label for="username">Username (mobile number)</label>
+      <input type="text" id="username" name="username" required autocomplete="username" autocapitalize="off" spellcheck="false" inputmode="text" <%- activeTab === 'user' ? 'autofocus' : 'disabled' %>>
+
+      <label for="upassword">Password</label>
+      <input type="password" id="upassword" name="password" required autocomplete="current-password" <%- activeTab === 'user' ? '' : 'disabled' %>>
+
+      <button type="submit">Open My Messages</button>
+    </form>
+
+    <div class="footer">THIRUPATHYBRIGHT INDUSTRIES</div>
+  </div>
+  <script>
+    (function () {
+      var tabs = document.querySelectorAll('.tab');
+      function select(name) {
+        tabs.forEach(function (t) { t.setAttribute('aria-selected', String(t.dataset.tab === name)); });
+        ['admin', 'user'].forEach(function (n) {
+          var f = document.getElementById('form-' + n);
+          var on = n === name;
+          f.hidden = !on;
+          f.querySelectorAll('input:not([type=hidden])').forEach(function (i) { i.disabled = !on; });
+        });
+        var first = document.querySelector('#form-' + name + ' input:not([type=hidden])');
+        if (first) first.focus();
+        var err = document.querySelector('.error');
+        if (err) err.remove();
+      }
+      tabs.forEach(function (t) { t.addEventListener('click', function () { select(t.dataset.tab); }); });
+    })();
+  </script>
+</body>
+</html>

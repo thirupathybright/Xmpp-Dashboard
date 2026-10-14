@@ -2,7 +2,7 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
@@ -1483,6 +1483,78 @@ app.post('/send-message', async (req, res) => {
       message: 'Your message here'
     }
   });
+});
+
+// ========== DIRECT SEND BY JID ==========
+
+// Send a plain text message directly to any JID (individual or group)
+app.post('/send-direct', async (req, res) => {
+  try {
+    const { jid, message, sessionId } = req.body;
+    if (!jid || !message) {
+      return res.status(400).json({ status: 'error', message: 'jid and message are required' });
+    }
+
+    // Pick a specific session or best available connected session
+    let session = null;
+    if (sessionId) {
+      const s = sessions.get(sessionId);
+      if (s && s.client && s.status.isLoggedIn) session = s;
+    }
+    if (!session) {
+      for (const [, s] of sessions.entries()) {
+        if (s.client && s.status.isLoggedIn) { session = s; break; }
+      }
+    }
+    if (!session) {
+      return res.status(400).json({ status: 'error', message: 'No connected WhatsApp session available' });
+    }
+
+    await session.client.sendMessage(jid, message);
+    res.json({ status: 'success', message: 'Message sent', jid });
+  } catch (error) {
+    console.error('❌ send-direct error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
+// Send image with caption to any JID (individual or group)
+app.post('/send-image', upload.single('image'), async (req, res) => {
+  try {
+    const { jid, caption, sessionId } = req.body;
+    if (!jid || !req.file) {
+      return res.status(400).json({ status: 'error', message: 'jid and image file are required' });
+    }
+
+    // Pick a specific session or best available connected session
+    let session = null;
+    if (sessionId) {
+      const s = sessions.get(sessionId);
+      if (s && s.client && s.status.isLoggedIn) session = s;
+    }
+    if (!session) {
+      for (const [, s] of sessions.entries()) {
+        if (s.client && s.status.isLoggedIn) { session = s; break; }
+      }
+    }
+    if (!session) {
+      // Clean up uploaded file
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ status: 'error', message: 'No connected WhatsApp session available' });
+    }
+
+    const media = MessageMedia.fromFilePath(req.file.path);
+    await session.client.sendMessage(jid, media, { caption: caption || '' });
+
+    // Clean up uploaded file after sending
+    fs.unlink(req.file.path, () => {});
+
+    res.json({ status: 'success', message: 'Image sent', jid });
+  } catch (error) {
+    if (req.file) fs.unlink(req.file.path, () => {});
+    console.error('❌ send-image error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
 });
 
 // ========== FLAG-BASED MESSAGE SENDING WITH RATE LIMITING ==========
